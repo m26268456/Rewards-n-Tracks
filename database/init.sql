@@ -1,64 +1,73 @@
--- Railway PostgreSQL 資�?庫�?始�??�本
--- ?��??�詢/計�??��?帳系統�??�庫結�?
+-- Railway PostgreSQL 資料庫初始化腳本
+-- 回饋查詢/計算與記帳系統資料庫結構
 -- PostgreSQL 15
 
--- ?��?
+-- 擴展
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- ============================================
--- 1. 信用?��??��??��?�?-- ============================================
+-- 1. 信用卡與方案相關表
+-- ============================================
 
--- 信用?�表
+-- 信用卡表
 CREATE TABLE IF NOT EXISTS cards (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    name VARCHAR(100) NOT NULL UNIQUE, -- 例�?：台?��??�卡
-    note TEXT, -- ?��??�註
-    display_order INTEGER NOT NULL DEFAULT 0, -- 顯示?��?
+    name VARCHAR(100) NOT NULL UNIQUE, -- 例如：台新狗狗卡
+    note TEXT, -- 卡片備註
+    display_order INTEGER NOT NULL DEFAULT 0, -- 顯示順序
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- ?��??��?�?CREATE TABLE IF NOT EXISTS card_schemes (
+-- 卡片方案表
+CREATE TABLE IF NOT EXISTS card_schemes (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     card_id UUID NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
-    name VARCHAR(100) NOT NULL, -- 例�?：好?�刷?�刷?��?
-    note TEXT, -- ?��??�註
-    requires_switch BOOLEAN DEFAULT false, -- ?�否?�要�???    activity_start_date DATE, -- 活�??��??��?
-    activity_end_date DATE, -- 活�?結�??��?
-    display_order INTEGER NOT NULL DEFAULT 0, -- 顯示?��?
+    name VARCHAR(100) NOT NULL, -- 例如：好匯刷、刷刷樂
+    note TEXT, -- 方案備註
+    requires_switch BOOLEAN DEFAULT false, -- 是否需要切換
+    activity_start_date DATE, -- 活動開始日期
+    activity_end_date DATE, -- 活動結束日期
+    display_order INTEGER NOT NULL DEFAULT 0, -- 顯示順序
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(card_id, name)
 );
 
--- ?��??��?組�?表�?一?�方案可以�?多個�?饋�??��?
+-- 方案回饋組成表（一個方案可以有多個回饋組成）
 CREATE TABLE IF NOT EXISTS scheme_rewards (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     scheme_id UUID NOT NULL REFERENCES card_schemes(id) ON DELETE CASCADE,
-    reward_percentage DECIMAL(5,2) NOT NULL, -- ?��?%?��?例�? 0.3, 2.7, 3.0
+    reward_percentage DECIMAL(5,2) NOT NULL, -- 回饋%數，例如 0.3, 2.7, 3.0
     calculation_method VARCHAR(20) NOT NULL CHECK (calculation_method IN ('round', 'floor', 'ceil')), 
-    -- round: ?�捨五入, floor: ?��?件捨?? ceil: ?��?件進�?
-    quota_limit DECIMAL(12,2), -- 額度上�?，NULL 表示?��???    quota_refresh_type VARCHAR(20) CHECK (quota_refresh_type IN ('monthly', 'date', 'activity')), 
-    -- monthly: 每�??��??��?, date: ?��??��?, activity: 活�?結�???    quota_refresh_value INTEGER, -- 每�?幾�??�日?��??��? refresh_type �??�?    quota_refresh_date DATE, -- ?��??��??�新（當 refresh_type = 'date' ?�使?��?
-    display_order INTEGER NOT NULL DEFAULT 0, -- 顯示?��?
+    -- round: 四捨五入, floor: 無條件捨去, ceil: 無條件進位
+    quota_limit DECIMAL(12,2), -- 額度上限，NULL 表示無上限
+    quota_refresh_type VARCHAR(20) CHECK (quota_refresh_type IN ('monthly', 'date', 'activity')), 
+    -- monthly: 每月固定日期, date: 指定日期, activity: 活動結束日
+    quota_refresh_value INTEGER, -- 每月幾號或日期（根據 refresh_type 解釋）
+    quota_refresh_date DATE, -- 指定日期刷新（當 refresh_type = 'date' 時使用）
+    display_order INTEGER NOT NULL DEFAULT 0, -- 顯示順序
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
 -- ============================================
--- 2. ?��??��??��?�?-- ============================================
+-- 2. 支付方式相關表
+-- ============================================
 
--- ?��??��?�?CREATE TABLE IF NOT EXISTS payment_methods (
+-- 支付方式表
+CREATE TABLE IF NOT EXISTS payment_methods (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    name VARCHAR(100) NOT NULL UNIQUE, -- 例�?：LINE Pay?�全?��?
-    note TEXT, -- ?��??��??�註
-    own_reward_percentage DECIMAL(5,2) DEFAULT 0, -- ?��??��??�身?��?�?
-    display_order INTEGER NOT NULL DEFAULT 0, -- 顯示?��?
+    name VARCHAR(100) NOT NULL UNIQUE, -- 例如：LINE Pay、全支付
+    note TEXT, -- 支付方式備註
+    own_reward_percentage DECIMAL(5,2) DEFAULT 0, -- 支付方式本身的回饋%
+    display_order INTEGER NOT NULL DEFAULT 0, -- 顯示順序
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- ?��??��?????�卡?�方案表（�?對�??��?�?CREATE TABLE IF NOT EXISTS payment_scheme_links (
+-- 支付方式連結的卡片方案表（多對多關係）
+CREATE TABLE IF NOT EXISTS payment_scheme_links (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     payment_method_id UUID NOT NULL REFERENCES payment_methods(id) ON DELETE CASCADE,
     scheme_id UUID NOT NULL REFERENCES card_schemes(id) ON DELETE CASCADE,
@@ -67,31 +76,39 @@ CREATE TABLE IF NOT EXISTS scheme_rewards (
     UNIQUE(payment_method_id, scheme_id)
 );
 
--- ?��??��??��?組�?表�?類似 scheme_rewards，用?��??��??��??��?饋�??��?
+-- 支付方式回饋組成表（類似 scheme_rewards，用於純支付方式的回饋組成）
 CREATE TABLE IF NOT EXISTS payment_rewards (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     payment_method_id UUID NOT NULL REFERENCES payment_methods(id) ON DELETE CASCADE,
-    reward_percentage DECIMAL(5,2) NOT NULL, -- ?��?%?��?例�? 0.3, 2.7, 3.0
+    reward_percentage DECIMAL(5,2) NOT NULL, -- 回饋%數，例如 0.3, 2.7, 3.0
     calculation_method VARCHAR(20) NOT NULL CHECK (calculation_method IN ('round', 'floor', 'ceil')), 
-    -- round: ?�捨五入, floor: ?��?件捨?? ceil: ?��?件進�?
-    quota_limit DECIMAL(12,2), -- 額度上�?，NULL 表示?��???    quota_refresh_type VARCHAR(20) CHECK (quota_refresh_type IN ('monthly', 'date', 'activity')), 
-    -- monthly: 每�??��??��?, date: ?��??��?, activity: 活�?結�???    quota_refresh_value INTEGER, -- 每�?幾�??�日?��??��? refresh_type �??�?    quota_refresh_date DATE, -- ?��??��??�新（當 refresh_type = 'date' ?�使?��?
-    display_order INTEGER NOT NULL DEFAULT 0, -- 顯示?��?
+    -- round: 四捨五入, floor: 無條件捨去, ceil: 無條件進位
+    quota_limit DECIMAL(12,2), -- 額度上限，NULL 表示無上限
+    quota_refresh_type VARCHAR(20) CHECK (quota_refresh_type IN ('monthly', 'date', 'activity')), 
+    -- monthly: 每月固定日期, date: 指定日期, activity: 活動結束日
+    quota_refresh_value INTEGER, -- 每月幾號或日期（根據 refresh_type 解釋）
+    quota_refresh_date DATE, -- 指定日期刷新（當 refresh_type = 'date' 時使用）
+    display_order INTEGER NOT NULL DEFAULT 0, -- 顯示順序
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
 -- ============================================
--- 3. ?�路?��?�?-- ============================================
+-- 3. 通路相關表
+-- ============================================
 
--- ?�路�?CREATE TABLE IF NOT EXISTS channels (
+-- 通路表
+CREATE TABLE IF NOT EXISTS channels (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    name VARCHAR(100) NOT NULL UNIQUE, -- 例�?�?-11?�全家、全??    is_common BOOLEAN DEFAULT false, -- ?�否?�常?�通路
-    display_order INTEGER NOT NULL DEFAULT 0, -- 常用?�路?�顯示�?�?    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    name VARCHAR(100) NOT NULL UNIQUE, -- 例如：7-11、全家、全聯
+    is_common BOOLEAN DEFAULT false, -- 是否為常用通路
+    display_order INTEGER NOT NULL DEFAULT 0, -- 常用通路的顯示順序
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- ?��??�除?�路�?CREATE TABLE IF NOT EXISTS scheme_channel_exclusions (
+-- 方案排除通路表
+CREATE TABLE IF NOT EXISTS scheme_channel_exclusions (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     scheme_id UUID NOT NULL REFERENCES card_schemes(id) ON DELETE CASCADE,
     channel_id UUID NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
@@ -99,32 +116,34 @@ CREATE TABLE IF NOT EXISTS payment_rewards (
     UNIQUE(scheme_id, channel_id)
 );
 
--- ?��??�用?�路表�??��?註�?
+-- 方案適用通路表（含備註）
 CREATE TABLE IF NOT EXISTS scheme_channel_applications (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     scheme_id UUID NOT NULL REFERENCES card_schemes(id) ON DELETE CASCADE,
     channel_id UUID NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
-    note TEXT, -- 該通路?�此?��?下�??�註
+    note TEXT, -- 該通路在此方案下的備註
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(scheme_id, channel_id)
 );
 
--- ?��??��??�用?�路表�??��?註�?
+-- 支付方式適用通路表（含備註）
 CREATE TABLE IF NOT EXISTS payment_channel_applications (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     payment_method_id UUID NOT NULL REFERENCES payment_methods(id) ON DELETE CASCADE,
     channel_id UUID NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
-    note TEXT, -- 該通路?�此?��??��?下�??�註
+    note TEXT, -- 該通路在此支付方式下的備註
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(payment_method_id, channel_id)
 );
 
 -- ============================================
--- 4. 交�?記�??��?�?-- ============================================
+-- 4. 交易記錄相關表
+-- ============================================
 
--- 交�?類�?表�??�要在 transactions 之�??�建�?CREATE TABLE IF NOT EXISTS transaction_types (
+-- 交易類型表（需要在 transactions 之前創建）
+CREATE TABLE IF NOT EXISTS transaction_types (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     name VARCHAR(100) NOT NULL UNIQUE,
     display_order INTEGER NOT NULL DEFAULT 0,
@@ -132,34 +151,42 @@ CREATE TABLE IF NOT EXISTS payment_channel_applications (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- 交�?記�?�?CREATE TABLE IF NOT EXISTS transactions (
+-- 交易記錄表
+CREATE TABLE IF NOT EXISTS transactions (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    transaction_date DATE NOT NULL, -- 交�??��?
+    transaction_date DATE NOT NULL, -- 交易日期
     reason VARCHAR(200) NOT NULL, -- 事由
-    amount DECIMAL(12,2), -- ?��?
-    type_id UUID REFERENCES transaction_types(id), -- 交�?類�?
-    note TEXT, -- ?�註
-    scheme_id UUID REFERENCES card_schemes(id), -- 使用?�卡?�方�?    payment_method_id UUID REFERENCES payment_methods(id), -- 使用?�支付方式�??��?綁�??��?
+    amount DECIMAL(12,2), -- 金額
+    type_id UUID REFERENCES transaction_types(id), -- 交易類型
+    note TEXT, -- 備註
+    scheme_id UUID REFERENCES card_schemes(id), -- 使用的卡片方案
+    payment_method_id UUID REFERENCES payment_methods(id), -- 使用的支付方式（當有綁定時）
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
 -- ============================================
--- 5. 額度追蹤?��?�?-- ============================================
+-- 5. 額度追蹤相關表
+-- ============================================
 
--- 額度追蹤表�?追蹤每個�?饋�??��?額度使用?��?�?CREATE TABLE IF NOT EXISTS quota_trackings (
+-- 額度追蹤表（追蹤每個回饋組成的額度使用情況）
+CREATE TABLE IF NOT EXISTS quota_trackings (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     scheme_id UUID REFERENCES card_schemes(id) ON DELETE CASCADE,
     payment_method_id UUID REFERENCES payment_methods(id) ON DELETE CASCADE,
     reward_id UUID REFERENCES scheme_rewards(id) ON DELETE CASCADE,
     payment_reward_id UUID REFERENCES payment_rewards(id) ON DELETE CASCADE,
-    -- ??payment_method_id 不為 NULL �?scheme_id 不為 NULL ?��?表示?�是?��??��?綁�??��??��??��?�?    -- ??payment_method_id 不為 NULL �?scheme_id ??NULL ?��?表示?�是純支付方式�?額度（使??payment_reward_id�?    current_amount DECIMAL(12,2) DEFAULT 0, -- ?��?消費?��?
-    used_quota DECIMAL(12,2) DEFAULT 0, -- 已使?��?度�?系統計�??��?a�?    manual_adjustment DECIMAL(12,2) DEFAULT 0, -- 人工調整?��?b）�?顯示?�總額度 = used_quota + manual_adjustment（c = a + b�?    remaining_quota DECIMAL(12,2), -- ?��?額度（NULL 表示?��??��?，�?算方式�?quota_limit - (used_quota + manual_adjustment)
-    last_refresh_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP, -- 上次?�新?��?
-    next_refresh_at TIMESTAMP WITH TIME ZONE, -- 下次?�新?��?
+    -- 當 payment_method_id 不為 NULL 且 scheme_id 不為 NULL 時，表示這是支付方式綁定卡片方案的額度
+    -- 當 payment_method_id 不為 NULL 且 scheme_id 為 NULL 時，表示這是純支付方式的額度（使用 payment_reward_id）
+    current_amount DECIMAL(12,2) DEFAULT 0, -- 當前消費金額
+    used_quota DECIMAL(12,2) DEFAULT 0, -- 已使用額度（系統計算值，a）
+    manual_adjustment DECIMAL(12,2) DEFAULT 0, -- 人工調整值（b），顯示的總額度 = used_quota + manual_adjustment（c = a + b）
+    remaining_quota DECIMAL(12,2), -- 剩餘額度（NULL 表示無上限），計算方式：quota_limit - (used_quota + manual_adjustment)
+    last_refresh_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP, -- 上次刷新時間
+    next_refresh_at TIMESTAMP WITH TIME ZONE, -- 下次刷新時間
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    -- 約�?：�??�是 (scheme_id + reward_id) ??(payment_method_id + payment_reward_id + scheme_id IS NULL)
+    -- 約束：必須是 (scheme_id + reward_id) 或 (payment_method_id + payment_reward_id + scheme_id IS NULL)
     CONSTRAINT quota_trackings_unique_check CHECK (
       (scheme_id IS NOT NULL AND reward_id IS NOT NULL) OR
       (payment_method_id IS NOT NULL AND payment_reward_id IS NOT NULL AND scheme_id IS NULL)
@@ -167,28 +194,32 @@ CREATE TABLE IF NOT EXISTS payment_channel_applications (
 );
 
 -- ============================================
--- 6. 設�??��?�?-- ============================================
+-- 6. 設定相關表
+-- ============================================
 
--- 事由字串設�?�?CREATE TABLE IF NOT EXISTS reason_strings (
+-- 事由字串設定表
+CREATE TABLE IF NOT EXISTS reason_strings (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    content TEXT NOT NULL, -- 事由字串?�容
+    content TEXT NOT NULL, -- 事由字串內容
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- 計�??��?下�??�單設�?表�??�於?��?計�??��?帳�??��?
+-- 計算方案下拉選單設定表（用於回饋計算和記帳功能）
 CREATE TABLE IF NOT EXISTS calculation_schemes (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     scheme_id UUID REFERENCES card_schemes(id) ON DELETE CASCADE,
     payment_method_id UUID REFERENCES payment_methods(id) ON DELETE CASCADE,
-    -- ?�兩?�都不為 NULL ?��?表示?��??��?綁�??��??��?
-    -- ?�只??scheme_id ?��?表示純卡?�方�?    -- ?�只??payment_method_id ?��?表示純支付方�?    display_order INTEGER NOT NULL DEFAULT 0,
+    -- 當兩者都不為 NULL 時，表示支付方式綁定卡片方案
+    -- 當只有 scheme_id 時，表示純卡片方案
+    -- 當只有 payment_method_id 時，表示純支付方式
+    display_order INTEGER NOT NULL DEFAULT 0,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
 -- ============================================
--- 7. 索�??��?
+-- 7. 索引優化
 -- ============================================
 
 CREATE INDEX IF NOT EXISTS idx_cards_display_order ON cards(display_order);
@@ -216,7 +247,7 @@ CREATE INDEX IF NOT EXISTS idx_payment_rewards_payment_method_id ON payment_rewa
 CREATE INDEX IF NOT EXISTS idx_payment_rewards_display_order ON payment_rewards(display_order);
 
 -- ============================================
--- 8. 觸發?��??��??�新 updated_at
+-- 8. 觸發器：自動更新 updated_at
 -- ============================================
 
 CREATE OR REPLACE FUNCTION update_updated_at_column()
@@ -227,7 +258,8 @@ BEGIN
 END;
 $$ language 'plpgsql';
 
--- ?�除?��?觸發?��?如�?存在）然後�??�創�?DROP TRIGGER IF EXISTS update_cards_updated_at ON cards;
+-- 刪除現有觸發器（如果存在）然後重新創建
+DROP TRIGGER IF EXISTS update_cards_updated_at ON cards;
 CREATE TRIGGER update_cards_updated_at BEFORE UPDATE ON cards
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
@@ -259,10 +291,9 @@ DROP TRIGGER IF EXISTS update_payment_rewards_updated_at ON payment_rewards;
 CREATE TRIGGER update_payment_rewards_updated_at BEFORE UPDATE ON payment_rewards
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
--- 完�?訊息
+-- 完成訊息
 DO $$
 BEGIN
-    RAISE NOTICE '??資�?庫�?構�?始�?完�?�?;
-    RAISE NOTICE '?? ?�?��??�表?�索引�?觸發?�已?�建??;
+    RAISE NOTICE '✅ 資料庫結構初始化完成！';
+    RAISE NOTICE '📊 所有資料表、索引和觸發器已創建。';
 END $$;
-
