@@ -1,0 +1,722 @@
+import { useState, useEffect, useRef } from 'react';
+import api from '../utils/api';
+
+// 輔助函數：將文字中的網址轉換為可點擊的連結
+function linkify(text: string): string {
+  if (!text) return '';
+  const urlRegex = /(https?:\/\/[^\s]+|www\.[^\s]+)/gi;
+  return text.replace(urlRegex, (url) => {
+    const href = url.startsWith('http') ? url : `https://${url}`;
+    const escapedUrl = url
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+    return `<a href="${href}" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:text-blue-800 underline break-all">${escapedUrl}</a>`;
+  });
+}
+
+// 格式化刷新規則
+const formatRefreshRule = (r: any) => {
+  if (r.quotaRefreshType === 'monthly') return `每月${r.quotaRefreshValue}號`;
+  if (r.quotaRefreshType === 'date') return `指定${r.quotaRefreshValue}`;
+  if (r.quotaRefreshType === 'activity') return '活動結束';
+  return '不刷新';
+};
+
+// 格式化計算基準
+const formatBasis = (basis?: string) => {
+  return basis === 'statement' ? '帳單總額' : '單筆回饋';
+};
+
+// 本頁百分比顯示：保留實際精度（最多 4 位），不強制 .00
+const formatPercent = (v: any) => {
+  const num = Number(v ?? 0);
+  if (!Number.isFinite(num)) return '0';
+  const rounded = Math.round(num * 10000) / 10000; // 最多 4 位小數，避免過長
+  return Number.isInteger(rounded) ? `${rounded}` : `${rounded}`;
+};
+
+// 過期/額度滿判斷
+const now = new Date();
+const isExpiredScheme = (activityEndDate?: string) =>
+  !!activityEndDate && new Date(activityEndDate) < now;
+
+const isQuotaFull = (reward: any) =>
+  reward &&
+  reward.quotaLimit !== null &&
+  reward.quotaLimit !== undefined &&
+  reward.remainingQuota !== null &&
+  reward.remainingQuota !== undefined &&
+  Number(reward.remainingQuota) <= 0;
+
+interface Channel {
+  id: string;
+  name: string;
+  isCommon: boolean;
+}
+
+interface QueryResult {
+  keyword: string;
+  channels: Array<{
+  channelId: string;
+  channelName: string;
+  results: Array<{
+    isExcluded: boolean;
+    excludedSchemeName?: string;
+    totalRewardPercentage: number;
+    rewardBreakdown: string;
+    schemeInfo: string;
+    requiresSwitch: boolean;
+    note?: string;
+    activityEndDate?: string;
+    totalExpired?: number;
+    totalFull?: number;
+      schemeChannelName?: string; // 方案中記錄的通路名稱
+      sourceChannelName?: string; // 後端回傳的來源通路名稱
+    }>;
+  }>;
+}
+
+interface Card {
+  id: string;
+  name: string;
+  note?: string;
+  displayOrder: number;
+  schemes: Array<{
+    id: string;
+    name: string;
+    note?: string;
+    requiresSwitch: boolean;
+    activityStartDate?: string;
+    activityEndDate?: string;
+    rewards: Array<{
+      percentage: number;
+      calculationMethod: string;
+      quotaLimit: number | null;
+      quotaRefreshType: string | null;
+      quotaRefreshValue: number | null;
+      quotaRefreshDate: string | null;
+      quotaCalculationBasis?: string;
+    }>;
+    exclusions: string[];
+    applications: Array<{
+      channelId: string;
+      channelName: string;
+      note?: string;
+    }>;
+  }>;
+}
+
+interface PaymentMethod {
+  id: string;
+  name: string;
+  note?: string;
+  ownRewardPercentage: number;
+  displayOrder: number;
+  linkedSchemes: Array<{
+    schemeId: string;
+    cardName: string;
+    schemeName: string;
+  }>;
+  applications: Array<{
+    channelId: string;
+    channelName: string;
+    note?: string;
+  }>;
+}
+
+export default function QueryRewards() {
+  const [commonChannels, setCommonChannels] = useState<Channel[]>([]);
+  const [selectedChannels, setSelectedChannels] = useState<string[]>([]);
+  const [selectedChannelNames, setSelectedChannelNames] = useState<Map<string, string>>(new Map());
+  const [manualInput, setManualInput] = useState('');
+  const [queryResults, setQueryResults] = useState<QueryResult[]>([]);
+  const [cards, setCards] = useState<Card[]>([]);
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
+  const [selectedItemSchemes, setSelectedItemSchemes] = useState<any[]>([]);
+  const [selectedCardInfo, setSelectedCardInfo] = useState<Card | null>(null);
+  const [selectedPaymentInfo, setSelectedPaymentInfo] = useState<PaymentMethod | null>(null);
+  const [lastAction, setLastAction] = useState<'query' | 'scheme'>('query');
+  const [expandedSchemeOverview, setExpandedSchemeOverview] = useState(false);
+  const [expandedCardsSection, setExpandedCardsSection] = useState(false);
+  const [expandedPaymentsSection, setExpandedPaymentsSection] = useState(false);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+
+  const calcTotals = (scheme: any) => {
+    const rewards = scheme.rewards || [];
+    const totalAll = rewards.reduce((sum: number, r: any) => sum + (Number(r.percentage) || 0), 0);
+    const totalExpired = rewards
+      .filter((r: any) => isExpiredScheme(scheme.activityEndDate))
+      .reduce((sum: number, r: any) => sum + (Number(r.percentage) || 0), 0);
+    const totalFull = rewards
+      .filter((r: any) => isQuotaFull(r))
+      .reduce((sum: number, r: any) => sum + (Number(r.percentage) || 0), 0);
+    const totalValid = rewards
+      .filter((r: any) => !isExpiredScheme(scheme.activityEndDate) && !isQuotaFull(r))
+      .reduce((sum: number, r: any) => sum + (Number(r.percentage) || 0), 0);
+    const hasBadge = totalExpired > 0 || totalFull > 0;
+    return { totalAll, totalExpired, totalFull, totalValid, hasBadge };
+  };
+
+  useEffect(() => {
+    api.get('/channels?commonOnly=true').then((res) => {
+      setCommonChannels(res.data.data);
+    });
+    api.get('/schemes/overview').then((res) => {
+      setCards(res.data.data);
+    });
+    api.get('/payment-methods/overview').then((res) => {
+      setPaymentMethods(res.data.data);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (selectedChannels.length === 0) {
+      setQueryResults([]);
+      return;
+    }
+
+    setLastAction('query');
+
+    const realChannelIds: string[] = [];
+    const keywords: string[] = [];
+
+    selectedChannels.forEach((id) => {
+      if (id.startsWith('keyword_')) {
+        const keyword = selectedChannelNames.get(id);
+        if (keyword) keywords.push(keyword);
+      } else {
+        realChannelIds.push(id);
+      }
+    });
+
+    const requests: Promise<any>[] = [];
+    if (keywords.length > 0) requests.push(api.post('/schemes/query-channels', { keywords }));
+    if (realChannelIds.length > 0) requests.push(api.post('/schemes/query-channels', { channelIds: realChannelIds }));
+
+    Promise.all(requests)
+      .then((responses) => {
+        const merged: QueryResult[] = [];
+
+        // keywords 查詢結果（後端已分組）
+        if (keywords.length > 0 && responses[0]) {
+          const kwData = responses[0].data?.data || [];
+          merged.push(...kwData);
+        }
+
+        // channelIds 查詢結果（包成單一分組）
+        const idxOffset = keywords.length > 0 ? 1 : 0;
+        if (realChannelIds.length > 0 && responses[idxOffset]) {
+          const chData = responses[idxOffset].data?.data || [];
+          merged.push({
+            keyword: '通路查詢',
+            channels: (Array.isArray(chData) ? chData : []).map((c: any) => ({
+              channelId: c.channelId,
+              channelName: c.channelName || selectedChannelNames.get(c.channelId) || '',
+              results: c.results || [],
+            })),
+          });
+        }
+
+        setQueryResults(merged);
+      })
+      .catch((error) => {
+        console.error('查詢錯誤:', error);
+        setQueryResults([]);
+      });
+  }, [selectedChannels]);
+
+  const handleToggleCommonChannel = (channelId: string) => {
+    const channel = commonChannels.find((c) => c.id === channelId);
+    if (!channel) return;
+
+    const virtualId = `keyword_common_${channelId}`;
+    if (selectedChannels.includes(virtualId)) {
+      setSelectedChannels(selectedChannels.filter((id) => id !== virtualId));
+      const newMap = new Map(selectedChannelNames);
+      newMap.delete(virtualId);
+      setSelectedChannelNames(newMap);
+    } else {
+      setSelectedChannels([...selectedChannels, virtualId]);
+      setSelectedChannelNames(new Map(selectedChannelNames.set(virtualId, channel.name)));
+    }
+  };
+
+  const handleManualInput = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' && manualInput.trim()) {
+      const keyword = manualInput.trim();
+      const virtualChannelId = `keyword_${keyword}_${Date.now()}`;
+      if (!selectedChannels.includes(virtualChannelId)) {
+        setSelectedChannels([...selectedChannels, virtualChannelId]);
+        setSelectedChannelNames(new Map(selectedChannelNames.set(virtualChannelId, keyword)));
+      }
+      setManualInput('');
+    }
+  };
+
+  const handleRemoveChannel = (channelId: string) => {
+    setSelectedChannels(selectedChannels.filter((id) => id !== channelId));
+    const newMap = new Map(selectedChannelNames);
+    newMap.delete(channelId);
+    setSelectedChannelNames(newMap);
+  };
+
+  const handleReset = () => {
+    setSelectedChannels([]);
+    setQueryResults([]);
+    setSelectedItemSchemes([]);
+    setSelectedCardInfo(null);
+    setSelectedPaymentInfo(null);
+    setSelectedChannelNames(new Map());
+    setLastAction('query');
+  };
+
+  const handleCardClick = (card: Card) => {
+    setLastAction('scheme');
+    setSelectedCardInfo(card);
+    setSelectedPaymentInfo(null);
+    setSelectedItemSchemes(
+      card.schemes.map((scheme) => ({
+        type: 'scheme',
+        cardName: card.name,
+        ...scheme,
+      }))
+    );
+    setTimeout(() => {
+      const el = document.getElementById('scheme-list');
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 100);
+  };
+
+  const handlePaymentClick = (pm: PaymentMethod) => {
+    setLastAction('scheme');
+    setSelectedCardInfo(null);
+    setSelectedPaymentInfo(pm);
+    const schemes: any[] = [];
+    
+    if (pm.ownRewardPercentage >= 0) {
+       schemes.push({
+        type: 'payment',
+        name: pm.name,
+        note: pm.note,
+        ownRewardPercentage: pm.ownRewardPercentage,
+        applications: pm.applications,
+        rewards: [] 
+      });
+    }
+    
+    pm.linkedSchemes.forEach((linkedScheme) => {
+      cards.forEach((card) => {
+        if (card.name === linkedScheme.cardName) {
+          const scheme = card.schemes.find((s) => s.id === linkedScheme.schemeId);
+          if (scheme) {
+            schemes.push({
+              type: 'payment_scheme',
+              cardName: card.name,
+              paymentName: pm.name,
+              ...scheme,
+            });
+          }
+        }
+      });
+    });
+    
+    setSelectedItemSchemes(schemes);
+    setTimeout(() => {
+      const el = document.getElementById('scheme-list');
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 100);
+  };
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setExpandedSchemeOverview(false);
+        setExpandedCardsSection(false);
+        setExpandedPaymentsSection(false);
+      }
+    };
+    const onClickOutside = (e: MouseEvent) => {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
+        setExpandedSchemeOverview(false);
+        setExpandedCardsSection(false);
+        setExpandedPaymentsSection(false);
+      }
+    };
+    document.addEventListener('keydown', onKeyDown);
+    document.addEventListener('mousedown', onClickOutside);
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      document.removeEventListener('mousedown', onClickOutside);
+    };
+  }, []);
+
+  return (
+    <div className="space-y-6" ref={rootRef}>
+      <h2 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent">
+        回饋查詢
+      </h2>
+
+      {/* 方案總覽 */}
+      <div className="card bg-gradient-to-br from-white to-blue-50">
+        <div className="border-2 border-indigo-200 rounded-lg overflow-hidden">
+          <button
+            onClick={() => setExpandedSchemeOverview(!expandedSchemeOverview)}
+            className="w-full cursor-pointer font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 px-4 py-3 flex items-center justify-between transition-colors"
+          >
+            <span className="flex items-center gap-2"><span className="text-xl">☰</span><span>方案總覽</span></span>
+            <span className={`text-sm text-indigo-500 transition-transform ${expandedSchemeOverview ? 'rotate-180' : ''}`}>▼</span>
+          </button>
+          {expandedSchemeOverview && (
+            <div className="px-4 py-2 bg-white border-t border-indigo-200 space-y-2">
+              <div className="border-2 border-blue-200 rounded-lg overflow-hidden">
+                <button
+                  onClick={() => {
+                    const next = !expandedCardsSection;
+                    setExpandedCardsSection(next);
+                    if (next) setExpandedPaymentsSection(false);
+                  }}
+                  className="w-full cursor-pointer font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 px-4 py-3 flex items-center justify-between transition-colors"
+                >
+                  <span className="flex items-center gap-2"><span className="text-xl">☰</span><span>信用卡</span></span>
+                  <span className={`text-sm text-blue-500 transition-transform ${expandedCardsSection ? 'rotate-180' : ''}`}>▼</span>
+                </button>
+                {expandedCardsSection && (
+                  <div className="px-4 py-2 bg-white border-t border-blue-200">
+                    {cards.length > 0 ? cards.map((card) => (
+                      <button key={card.id} onClick={() => handleCardClick(card)} className="w-full text-left py-2 px-3 hover:bg-blue-50 rounded transition-colors border-l-4 border-blue-300 mb-1">
+                        <span className="font-medium text-blue-800">▶ {card.name}</span>
+                      </button>
+                    )) : <div className="text-sm text-gray-500 py-2">尚無信用卡資料</div>}
+                  </div>
+                )}
+              </div>
+              
+              <div className="border-2 border-purple-200 rounded-lg overflow-hidden">
+                <button
+                  onClick={() => {
+                    const next = !expandedPaymentsSection;
+                    setExpandedPaymentsSection(next);
+                    if (next) setExpandedCardsSection(false);
+                  }}
+                  className="w-full cursor-pointer font-semibold text-purple-700 bg-purple-50 hover:bg-purple-100 px-4 py-3 flex items-center justify-between transition-colors"
+                >
+                  <span className="flex items-center gap-2"><span className="text-xl">☰</span><span>支付方式</span></span>
+                  <span className={`text-sm text-purple-500 transition-transform ${expandedPaymentsSection ? 'rotate-180' : ''}`}>▼</span>
+                </button>
+                {expandedPaymentsSection && (
+                  <div className="px-4 py-2 bg-white border-t border-purple-200">
+                    {paymentMethods.length > 0 ? paymentMethods.map((pm) => (
+                      <button key={pm.id} onClick={() => handlePaymentClick(pm)} className="w-full text-left py-2 px-3 hover:bg-purple-50 rounded transition-colors border-l-4 border-purple-300 mb-1">
+                        <span className="font-medium text-purple-800">▶ {pm.name}</span>
+                      </button>
+                    )) : <div className="text-sm text-gray-500 py-2">尚無支付方式資料</div>}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="space-y-6">
+          <div className="card bg-gradient-to-br from-white to-purple-50">
+            <h3 className="text-xl font-semibold mb-4 bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">回饋查詢</h3>
+            
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">常用通路</label>
+              <div className="flex flex-wrap gap-2">
+                {commonChannels.map((channel) => {
+                  const vid = `keyword_common_${channel.id}`;
+                  return (
+                    <button key={channel.id} onClick={() => handleToggleCommonChannel(channel.id)} className={`px-4 py-2 rounded-lg text-sm font-medium shadow-md transition-all duration-200 ${selectedChannels.includes(vid) ? 'bg-gradient-to-r from-green-500 to-emerald-500 text-white' : 'bg-gradient-to-r from-blue-500 to-cyan-500 text-white'}`}>
+                      {selectedChannels.includes(vid) ? '✓ ' : ''}{channel.name}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">手動輸入</label>
+              <input type="text" value={manualInput} onChange={(e) => setManualInput(e.target.value)} onKeyDown={handleManualInput} placeholder="輸入通路名稱後按 Enter" className="w-full px-3 py-2 border rounded-md" />
+            </div>
+
+            {selectedChannels.length > 0 && (
+              <div className="mb-4">
+                <div className="flex justify-between mb-2"><label className="block text-sm font-medium text-gray-700">已選通路</label><button onClick={handleReset} className="text-sm bg-red-500 text-white px-3 py-1 rounded">重置</button></div>
+                <div className="flex flex-wrap gap-2">
+                  {selectedChannels.map((channelId) => (
+                    <div key={channelId} className="flex items-center gap-1 px-3 py-1 bg-gray-100 rounded">
+                      <span className="text-sm">{selectedChannelNames.get(channelId) || commonChannels.find((c) => c.id === channelId)?.name || channelId}</span>
+                      <button onClick={() => handleRemoveChannel(channelId)} className="text-red-600">×</button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div id="scheme-list" className="card bg-gradient-to-br from-white to-green-50">
+            {lastAction === 'query' && queryResults.length > 0 && (
+              <>
+                <h3 className="text-lg font-semibold mb-4 text-green-800">查詢結果</h3>
+                <div className="space-y-6">
+                  {/* 按關鍵字分組顯示 */}
+                  {queryResults.map((keywordGroup, keywordIdx) => (
+                    <div key={keywordIdx} className="border-2 border-blue-200 rounded-lg p-4 bg-white shadow-sm">
+                      <h4 className="font-bold mb-4 text-xl border-b-2 border-blue-300 pb-2 text-blue-700">
+                        {keywordGroup.keyword}
+                      </h4>
+                <div className="space-y-4">
+                        {/* 每個關鍵字下的通路 */}
+                        {(keywordGroup.channels || []).map((channel, channelIdx) => (
+                          <div key={channelIdx} className="border rounded p-3 bg-gray-50">
+                            <h5 className="font-semibold mb-2 text-base text-gray-700">
+                              {channel.channelName}
+                            </h5>
+                      <div className="space-y-2">
+                              {(() => {
+                                // 合併所有結果（包括有效額度）
+                                const allResults: Array<{ item: any; type: 'normal' | 'valid'; percentage: number }> = [];
+                                
+                                // 先加入一般搜尋結果
+                                (channel.results || []).forEach((item, idx) => {
+                                  allResults.push({
+                                    item,
+                                    type: 'normal',
+                                    percentage: item.totalRewardPercentage || 0
+                                  });
+                                });
+                                
+                                // 再加入有效額度區塊
+                                (channel.results || []).forEach((item, idx) => {
+                                  const isExpired = !item.isExcluded && item.activityEndDate && isExpiredScheme(item.activityEndDate);
+                                  const totalFull = item.totalFull || 0;
+                                  const totalPercentage = item.totalRewardPercentage || 0;
+                                  const totalValid = !item.isExcluded ? Math.max(0, totalPercentage - totalFull) : 0;
+                                  
+                                  if (!item.isExcluded && !isExpired && totalValid > 0 && totalValid < totalPercentage) {
+                                    allResults.push({
+                                      item: { ...item, totalRewardPercentage: totalValid },
+                                      type: 'valid',
+                                      percentage: totalValid
+                                    });
+                                  }
+                                });
+                                
+                                // 排序：排除的置頂，然後按百分比降序
+                                allResults.sort((a, b) => {
+                                  const aExcluded = a.item.isExcluded;
+                                  const bExcluded = b.item.isExcluded;
+                                  if (aExcluded && !bExcluded) return -1;
+                                  if (!aExcluded && bExcluded) return 1;
+                                  return b.percentage - a.percentage;
+                                });
+                                
+                                // 統一顯示
+                                return allResults.map((result, idx) => {
+                                  const { item, type } = result;
+                                  const isExpired = !item.isExcluded && item.activityEndDate && isExpiredScheme(item.activityEndDate);
+                                  const totalFull = item.totalFull || 0;
+                                  const totalPercentage = type === 'valid' ? item.totalRewardPercentage : (item.totalRewardPercentage || 0);
+                                  const hasPartialQuotaFull = totalFull > 0 && totalFull < (type === 'valid' ? (item.totalRewardPercentage + totalFull) : totalPercentage);
+                                  
+                                  let bgClass = 'bg-green-50 border-l-4 border-green-500';
+                                  if (item.isExcluded || isExpired) {
+                                    bgClass = 'bg-red-50 border-l-4 border-red-500';
+                                  } else if (hasPartialQuotaFull && type === 'normal') {
+                                    bgClass = 'bg-orange-50 border-l-4 border-orange-500';
+                                  }
+                                  
+                                  return (
+                                    <div key={`${type}-${idx}`} className={`p-3 rounded-lg ${bgClass}`}>
+                                      {item.isExcluded ? (
+                                        <div className="text-sm">
+                                          <div className="flex flex-wrap items-center gap-2 mb-1">
+                                            <span className="badge-danger font-medium">排除</span>
+                                            <span className="font-semibold">{item.excludedSchemeName}</span>
+                                            {/* 通路徽章 */}
+                                            {item.channelName && (
+                                              <span className="text-gray-500 text-xs bg-gray-100 px-2 py-0.5 rounded-full">
+                                                {item.channelName}
+                                              </span>
+                                            )}
+                                          </div>
+                                          {/* 排除通路備註 */}
+                                          {item.note && (
+                                            <div className="text-xs text-gray-600 bg-white/50 px-2 py-1 rounded mt-1">💡 {item.note}</div>
+                                          )}
+                                        </div>
+                                      ) : (
+                                        <div className="text-sm">
+                                          <div className="flex flex-wrap items-center gap-2 mb-1">
+                                            <span className={`text-xl font-bold ${isExpired ? 'text-red-600' : (hasPartialQuotaFull && type === 'normal') ? 'text-orange-600' : 'text-green-600'}`}>
+                                              {formatPercent(totalPercentage)}%
+                                            </span>
+                                            <span className="font-semibold text-gray-800">{item.schemeInfo}</span>
+                                            <span className={`badge ${item.requiresSwitch ? 'badge-warning' : 'badge-success'}`}>
+                                              {item.requiresSwitch ? '需切換' : '免切換'}
+                                            </span>
+                                            {/* 過期/超額徽章（僅在一般結果顯示） */}
+                                            {type === 'normal' && (() => {
+                                              const totalExpired = item.totalExpired || 0;
+                                              const totalFull = item.totalFull || 0;
+                                              const badges = [];
+                                              if (totalExpired > 0) {
+                                                badges.push(<span key="expired" className="badge-danger">{formatPercent(totalExpired)}% 已過期</span>);
+                                              }
+                                              if (totalFull > 0) {
+                                                badges.push(<span key="full" className="badge-warning">{formatPercent(totalFull)}% 已超額</span>);
+                                              }
+                                              return badges;
+                                            })()}
+                                            {/* 通路徽章 */}
+                                            {item.schemeChannelName && (
+                                              <span className="text-gray-500 text-xs bg-gray-100 px-2 py-0.5 rounded-full">
+                                                {item.schemeChannelName}
+                                              </span>
+                                            )}
+                                            {item.sourceChannelName && item.sourceChannelName !== item.schemeChannelName && (
+                                              <span className="text-gray-500 text-xs bg-gray-100 px-2 py-0.5 rounded-full">
+                                                {item.sourceChannelName}
+                                              </span>
+                                            )}
+                                          </div>
+                                          {item.note && <div className="text-xs text-gray-600 bg-white/50 px-2 py-1 rounded">💡 {item.note}</div>}
+                                          <div className="text-xs text-gray-500 mt-1">
+                                            {item.rewardBreakdown && <span>📊 組成：{item.rewardBreakdown}</span>}
+                                            {item.activityEndDate && <span className="ml-2">📅 期限：{new Date(item.activityEndDate).toLocaleDateString()}</span>}
+                                          </div>
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                });
+                              })()}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+
+            {lastAction === 'scheme' && selectedItemSchemes.length > 0 && (
+              <>
+                <div className="flex justify-between items-start mb-4">
+                  <h3 className="text-lg font-semibold text-green-800">方案列表</h3>
+                  <button onClick={() => { setSelectedItemSchemes([]); setSelectedCardInfo(null); setSelectedPaymentInfo(null); setLastAction('query'); }} className="text-gray-500 hover:text-gray-700">✕</button>
+                </div>
+                <div className="space-y-4">
+                  {selectedCardInfo && (
+                    <div className="bg-white p-4 rounded-lg border-2 border-blue-200">
+                      <div className="text-xl font-bold text-blue-800 mb-2">{selectedCardInfo.name}</div>
+                      {selectedCardInfo.note && <div className="text-sm text-gray-600" dangerouslySetInnerHTML={{ __html: linkify(selectedCardInfo.note) }} />}
+                    </div>
+                  )}
+                  {selectedPaymentInfo && (
+                    <div className="bg-white p-4 rounded-lg border-2 border-purple-200">
+                      <div className="text-xl font-bold text-purple-800 mb-2">{selectedPaymentInfo.name}</div>
+                      {selectedPaymentInfo.note && <div className="text-sm text-gray-600" dangerouslySetInnerHTML={{ __html: linkify(selectedPaymentInfo.note) }} />}
+                    </div>
+                  )}
+                  
+                  {/* 方案詳細列表 [修正項目 7] */}
+                  <div className="space-y-3">
+                    {selectedItemSchemes.map((scheme, index) => (
+                      <div key={index} className="bg-white p-4 rounded-lg border border-green-200 shadow-sm ml-2">
+                        <div className="font-semibold text-base mb-2 flex items-center justify-between">
+                          <span>{scheme.name}</span>
+                          {scheme.requiresSwitch && <span className="text-xs bg-orange-100 text-orange-800 px-2 py-0.5 rounded">需切換</span>}
+                        </div>
+                        
+                        {scheme.note && <div className="text-sm text-gray-600 mb-2 bg-gray-50 p-2 rounded" dangerouslySetInnerHTML={{ __html: linkify(scheme.note) }} />}
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+                          <div>
+                            <div className="font-medium text-gray-700 mb-1">回饋規則</div>
+                            <ul className="space-y-2 text-gray-600 text-xs">
+                              {scheme.rewards?.map((r: any, idx: number) => (
+                                <li key={idx} className="flex flex-col bg-gray-50 p-1.5 rounded">
+                                  <div className="flex items-center justify-between">
+                                    <span className="font-bold text-green-600 text-sm">{r.percentage}%</span>
+                                    <span className="text-purple-600 text-[10px] border border-purple-200 px-1 rounded">{formatBasis(r.quotaCalculationBasis)}</span>
+                                  </div>
+                                  <div className="flex flex-wrap gap-x-2 mt-1 text-gray-500">
+                                    <div className="flex flex-col text-gray-700 text-sm space-y-1">
+                                      <span>{r.calculationMethod === 'round' ? '四捨五入' : r.calculationMethod === 'floor' ? '無條件捨去' : '無條件進位'}</span>
+                                      <span className="text-[11px] text-purple-700 border border-purple-200 rounded px-1 inline-block w-fit">
+                                        {formatBasis(r.quotaCalculationBasis)}
+                                    </span>
+                                    </div>
+                                    <span className="text-gray-400">|</span>
+                                    <span>{r.quotaLimit ? `上限 ${r.quotaLimit}` : '無上限'}</span>
+                                    <span className="text-gray-400">|</span>
+                                    <span>{formatRefreshRule(r)}</span>
+                                  </div>
+                                  {/* 顯示額度資訊 */}
+                                  {r.quotaLimit !== null && (
+                                    <div className="mt-1 text-xs text-blue-600">
+                                      額度: {r.usedQuota || 0} / {r.remainingQuota !== null ? r.remainingQuota : r.quotaLimit} / {r.quotaLimit}
+                                    </div>
+                                  )}
+                                </li>
+                              ))}
+                              {!scheme.rewards?.length && <li>無回饋設定</li>}
+                            </ul>
+                          </div>
+                          
+                          {(scheme.activityStartDate || scheme.activityEndDate) && (
+                            <div>
+                              <div className="font-medium text-gray-700 mb-1">活動期限</div>
+                              <div className="text-xs text-gray-600">
+                                {scheme.activityStartDate && new Date(scheme.activityStartDate).toLocaleDateString()}
+                                {scheme.activityStartDate && scheme.activityEndDate && ' ~ '}
+                                {scheme.activityEndDate && new Date(scheme.activityEndDate).toLocaleDateString()}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        {scheme.applications?.length > 0 && (
+                          <div className="mt-3 text-xs">
+                            <span className="font-medium text-green-600">適用：</span>
+                            <span className="text-gray-600 ml-1">
+                              {scheme.applications.map((app: any) => app.channelName).join('、')}
+                            </span>
+                          </div>
+                        )}
+                        {scheme.exclusions?.length > 0 && (
+                          <div className="mt-1 text-xs">
+                            <span className="font-medium text-red-600">排除：</span>
+                            <span className="text-gray-600 ml-1">
+                              {scheme.exclusions.map((ex: any, idx: number) => {
+                                const channelName = typeof ex === 'string' ? ex : ex.channelName;
+                                const note = typeof ex === 'string' ? null : ex.note;
+                                return (
+                                  <span key={idx}>
+                                    {channelName}
+                                    {note && <span className="text-gray-400"> ({note})</span>}
+                                    {idx < scheme.exclusions.length - 1 && '、'}
+                                  </span>
+                                );
+                              })}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+      </div>
+    </div>
+  );
+}
