@@ -239,6 +239,8 @@ export default function QuotaQuery() {
 
                   const rowsToRender = validRewardIndices;
 
+                  const borderColor = 'border-gray-200';
+
                   return rowsToRender.map((rIdx: number) => {
                     const isFirst = rIdx === 0;
                     const rewardPercentage = primary.rewardComposition?.split('/')[rIdx]?.replace('%', '') || '';
