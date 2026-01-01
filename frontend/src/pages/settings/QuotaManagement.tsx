@@ -455,9 +455,9 @@ export default function QuotaManagement() {
                     {isFirst && (
                       <td
                         rowSpan={rowsToRender.length}
-                        className={`px-3 py-2 text-sm font-medium sticky left-0 ${schemeBgColor} z-10 border-r border-gray-200 align-middle text-center whitespace-nowrap min-w-[140px]`}
+                        className={`px-3 py-2 text-sm font-medium sticky left-0 ${schemeBgColor} z-10 border-r border-gray-200 align-middle text-left whitespace-nowrap min-w-[140px]`}
                       >
-                        <div className="flex items-center justify-center h-full">
+                        <div className="flex items-center justify-start h-full">
                           <div className="font-semibold">{rootNameDisplay}</div>
                         </div>
                       </td>
