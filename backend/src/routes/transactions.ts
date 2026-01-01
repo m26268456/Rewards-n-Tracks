@@ -569,7 +569,6 @@ router.delete('/:id', async (req: Request, res: Response, next: NextFunction) =>
 // 導出交易記錄為 Excel
 router.get('/export', async (_req: Request, res: Response, next: NextFunction) => {
   try {
-    const pad = (n: number) => String(n).padStart(2, '0');
     const formatDateTime = (d: Date | null) => {
       if (!d || isNaN(d.getTime())) return '';
       return formatTz(utcToZonedTime(d, TIMEZONE), 'yyyy/MM/dd HH:mm:ss', { timeZone: TIMEZONE });

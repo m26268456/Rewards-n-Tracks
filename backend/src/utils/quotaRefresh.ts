@@ -1,5 +1,5 @@
 import { addMonths, isAfter, startOfMonth, setDate, addDays } from 'date-fns';
-import { zonedTimeToUtc, format as formatTz, utcToZonedTime } from 'date-fns-tz';
+import { zonedTimeToUtc, utcToZonedTime } from 'date-fns-tz';
 import { QuotaRefreshType } from './types';
 
 // 時區設定：UTC+8 (Asia/Taipei)

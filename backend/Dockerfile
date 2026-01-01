@@ -5,7 +5,9 @@ WORKDIR /app
 
 # 複製依賴檔案並安裝所有依賴（包括 devDependencies，用於構建）
 COPY package*.json ./
-RUN npm install
+# 有些平台會在 build 時設定 NODE_ENV=production，導致 devDependencies（如 typescript）不會被安裝
+# 這裡強制包含 devDependencies，確保 build 階段可正常編譯
+RUN npm ci --include=dev
 
 # 複製原始碼
 COPY . .
