@@ -419,11 +419,8 @@ export default function QuotaManagement() {
               // 渲染所有回饋組成
               const rowsToRender = rewardIndices;
 
-              const nameRowIdx = Math.floor((rowsToRender.length - 1) / 2);
-
               return rowsToRender.map((rIdx: number) => {
                 const isFirst = rIdx === 0;
-                const showName = rIdx === nameRowIdx;
                 const isEditingQ = editingQuota?.idx === primary.__index && editingQuota?.rIdx === rIdx;
                 const isEditingR = editingReward?.idx === primary.__index && editingReward?.rIdx === rIdx;
                 const isCardScheme = primary.schemeId && !primary.paymentMethodId;
@@ -447,6 +444,7 @@ export default function QuotaManagement() {
                 
                 // [Modified] 交錯邏輯：方案交錯 + 組成從該方案顏色開始交錯
                 const rowBgColor = (groupColorIdx + rIdx) % 2 === 0 ? 'bg-white' : 'bg-blue-50';
+                const schemeBgColor = groupColorIdx % 2 === 0 ? 'bg-white' : 'bg-blue-50';
                 const rowBorder = 'border-gray-200';
 
                 return (
@@ -454,13 +452,16 @@ export default function QuotaManagement() {
                     key={`${sharedKey}-${primary.__index}-${rIdx}`}
                     className={`${rowBgColor} border-l-4 ${rowBorder}`}
                   >
-                    <td className={`px-3 py-2 text-sm font-medium sticky left-0 ${rowBgColor} z-10 border-r border-gray-200 align-middle whitespace-nowrap min-w-[140px]`}>
-                      {showName && (
-                        <div className="flex items-center">
+                    {isFirst && (
+                      <td
+                        rowSpan={rowsToRender.length}
+                        className={`px-3 py-2 text-sm font-medium sticky left-0 ${schemeBgColor} z-10 border-r border-gray-200 align-middle text-center whitespace-nowrap min-w-[140px]`}
+                      >
+                        <div className="flex items-center justify-center h-full">
                           <div className="font-semibold">{rootNameDisplay}</div>
                         </div>
-                      )}
-                    </td>
+                      </td>
+                    )}
                     <td className="px-3 py-2 text-sm align-top whitespace-nowrap min-w-[120px]">
                       {isEditingR ? (
                         <div className="space-y-2">

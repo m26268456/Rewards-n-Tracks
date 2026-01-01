@@ -245,12 +245,10 @@ export default function QuotaQuery() {
                   const rowsToRender = validRewardIndices;
 
                   const borderColor = 'border-gray-200';
-
-                  const nameRowIdx = Math.floor((rowsToRender.length - 1) / 2);
+                  const schemeBgColor = colorIndex % 2 === 0 ? 'bg-white' : 'bg-blue-50';
 
                   return rowsToRender.map((rIdx: number) => {
                     const isFirst = rIdx === 0;
-                    const showName = rIdx === nameRowIdx;
                     const rewardPercentage = primary.rewardComposition?.split('/')[rIdx]?.replace('%', '') || '';
                     const calculationMethod = primary.calculationMethods?.[rIdx] || 'round';
                     const calculationMethodText = 
@@ -273,13 +271,16 @@ export default function QuotaQuery() {
                     
                     return (
                       <tr key={`${sharedKey}-${primary.schemeId || primary.paymentMethodId || 'q'}-${rIdx}`} className={`${bgColor} border-l-4 ${borderColor}`}>
-                        <td className={`px-3 py-2 text-sm font-medium sticky left-0 ${bgColor} z-10 border-r border-gray-200 align-middle whitespace-nowrap min-w-[140px]`}>
-                          {showName && (
-                            <div className="flex items-center">
+                        {isFirst && (
+                          <td
+                            rowSpan={rowsToRender.length}
+                            className={`px-3 py-2 text-sm font-medium sticky left-0 ${schemeBgColor} z-10 border-r border-gray-200 align-middle text-center whitespace-nowrap min-w-[140px]`}
+                          >
+                            <div className="flex items-center justify-center h-full">
                               <div className="font-semibold">{rootNameDisplay}</div>
                             </div>
-                          )}
-                        </td>
+                          </td>
+                        )}
                         <td className="px-3 py-2 text-sm align-top whitespace-nowrap min-w-[120px]">
                           <span className="bg-orange-100 px-1 rounded font-bold">{rewardPercentage ? `${rewardPercentage}%` : '-'}</span>
                         </td>
