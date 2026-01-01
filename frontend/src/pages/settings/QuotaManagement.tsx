@@ -419,8 +419,11 @@ export default function QuotaManagement() {
               // 渲染所有回饋組成
               const rowsToRender = rewardIndices;
 
+              const nameRowIdx = Math.floor((rowsToRender.length - 1) / 2);
+
               return rowsToRender.map((rIdx: number) => {
                 const isFirst = rIdx === 0;
+                const showName = rIdx === nameRowIdx;
                 const isEditingQ = editingQuota?.idx === primary.__index && editingQuota?.rIdx === rIdx;
                 const isEditingR = editingReward?.idx === primary.__index && editingReward?.rIdx === rIdx;
                 const isCardScheme = primary.schemeId && !primary.paymentMethodId;
@@ -452,7 +455,7 @@ export default function QuotaManagement() {
                     className={`${rowBgColor} border-l-4 ${rowBorder}`}
                   >
                     <td className={`px-3 py-2 text-sm font-medium sticky left-0 ${rowBgColor} z-10 border-r border-gray-200 align-middle whitespace-nowrap min-w-[140px]`}>
-                      {isFirst && (
+                      {showName && (
                         <div className="flex items-center">
                           <div className="font-semibold">{rootNameDisplay}</div>
                         </div>
