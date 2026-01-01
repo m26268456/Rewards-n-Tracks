@@ -46,9 +46,28 @@ export default function CalculateRewards() {
 
   useEffect(() => {
     loadSchemes();
-    // 每5秒重新載入一次，以同步調整順序的變更
-    const interval = setInterval(loadSchemes, 5000);
-    return () => clearInterval(interval);
+    // 觸發一次額度刷新檢查，確保計算時額度是最新的 (Fire and forget)
+    api.get('/quota').catch(() => {});
+    
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        loadSchemes();
+        api.get('/quota').catch(() => {});
+      }
+    };
+    
+    const handleFocus = () => {
+      loadSchemes();
+      api.get('/quota').catch(() => {});
+    };
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleFocus);
+    
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleFocus);
+    };
   }, []);
 
   const loadSchemes = async () => {

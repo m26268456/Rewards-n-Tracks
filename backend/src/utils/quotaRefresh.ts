@@ -1,5 +1,5 @@
-import { addMonths, isAfter, startOfMonth, setDate } from 'date-fns';
-import { zonedTimeToUtc, format as formatTz } from 'date-fns-tz';
+import { addMonths, isAfter, startOfMonth, setDate, addDays } from 'date-fns';
+import { zonedTimeToUtc, format as formatTz, utcToZonedTime } from 'date-fns-tz';
 import { QuotaRefreshType } from './types';
 
 // 時區設定：UTC+8 (Asia/Taipei)
@@ -10,10 +10,7 @@ export const TIMEZONE = 'Asia/Taipei';
  */
 export function getTaipeiTime(): Date {
   const now = new Date();
-  // 取得 UTC+8 時區的當前時間字串，然後解析為 Date
-  // 例如：現在是 UTC 12:00，UTC+8 是 20:00，這裡返回的 Date 物件時間部分就是 20:00
-  const taipeiTimeStr = formatTz(now, 'yyyy-MM-dd HH:mm:ss', { timeZone: TIMEZONE });
-  return new Date(taipeiTimeStr);
+  return utcToZonedTime(now, TIMEZONE);
 }
 
 /**
@@ -81,7 +78,8 @@ export function calculateNextRefreshTime(
       if (!activityEndDate) return null;
       // 活動結束日刷新通常指活動結束後歸零或重置
       const [actYear, actMonth, actDay] = activityEndDate.split('-').map(Number);
-      const activityEndTaipei = new Date(actYear, actMonth - 1, actDay, 0, 0, 0, 0);
+      // 改為隔天凌晨（活動結束隔天才算過期/刷新）
+      const activityEndTaipei = addDays(new Date(actYear, actMonth - 1, actDay, 0, 0, 0, 0), 1);
       
       // 邏輯同上，只有在未來才設定
       if (!isAfter(activityEndTaipei, nowTaipei)) {

@@ -93,8 +93,12 @@ const startServer = async () => {
   const server = app.listen(port, env.HOST, () => {
     console.log(`🚀 後端服務運行於 http://${env.HOST}:${port}`);
     
-    // 啟動額度刷新定時任務
-    startQuotaRefreshScheduler();
+    // 啟動額度刷新定時任務 (混合模式：可透過環境變數控制是否啟用)
+    if (process.env.ENABLE_QUOTA_REFRESH_SCHEDULER === 'true') {
+      startQuotaRefreshScheduler();
+    } else {
+      console.log('💡 額度刷新定時任務已停用 (ENABLE_QUOTA_REFRESH_SCHEDULER 未設定或為 false)');
+    }
   });
 
   // 處理端口佔用錯誤

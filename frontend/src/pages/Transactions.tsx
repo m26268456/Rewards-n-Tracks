@@ -150,20 +150,39 @@ export default function Transactions() {
         );
         if (match && Array.isArray(match.remainingQuotas) && Array.isArray(match.quotaLimits)) {
           const warnings: string[] = [];
+
+          const parts: string[] =
+            typeof match.rewardComposition === 'string' && match.rewardComposition.trim() !== ''
+              ? match.rewardComposition.split('/')
+              : [];
+
           match.remainingQuotas.forEach((rq: any, idx: number) => {
-            const limit = match.quotaLimits[idx];
-            if (limit === null || limit === undefined) return; // 無上限
-            const remaining = rq === null || rq === undefined ? limit : Number(rq);
-            const pct = (remaining / Number(limit)) * 100;
-            const msgBase = `剩餘 ${Math.round(remaining)} 點`;
-            if (pct <= 0) warnings.push(`⚠️ 剩餘額度 0% (${msgBase})`);
-            else if (pct <= 10) warnings.push(`⚠️ 剩餘額度 <10% (${msgBase})`);
-            else if (pct <= 25) warnings.push(`⚠️ 剩餘額度 <25% (${msgBase})`);
-            else if (pct <= 50) warnings.push(`⚠️ 剩餘額度 <50% (${msgBase})`);
+            const limit = match.quotaLimits?.[idx];
+            if (limit === null || limit === undefined) return; // 無上限不警告
+
+            const limitNum = Number(limit);
+            if (!Number.isFinite(limitNum) || limitNum <= 0) return;
+
+            const remainingNum = rq === null || rq === undefined ? limitNum : Number(rq);
+            if (!Number.isFinite(remainingNum)) return;
+
+            const ratio = remainingNum / limitNum;
+
+            // [組成]：優先用回饋%數；取不到就用序號
+            const componentLabel = parts[idx]?.trim() || `組成${idx + 1}`;
+
+            if (remainingNum <= 0) {
+              warnings.push(`⚠️⚠️[${componentLabel}] 剩餘額度=0 (剩餘0點)`);
+              return;
+            }
+
+            if (ratio < 0.5) {
+              warnings.push(`⚠️[${componentLabel}] 剩餘額度<50% (剩餘${Math.round(remainingNum)}點)`);
+            }
           });
+
           if (warnings.length > 0) {
-            // 取最低警戒線（已依條件序列判斷，最後一個為最嚴重）
-            alert(warnings[warnings.length - 1]);
+            alert(warnings.join('\n'));
           } else {
             alert('交易已新增');
           }
@@ -171,7 +190,7 @@ export default function Transactions() {
           alert('交易已新增');
         }
       } else {
-      alert('交易已新增');
+        alert('交易已新增');
       }
       loadTransactions();
       setFormData({
@@ -362,7 +381,7 @@ export default function Transactions() {
               {transactions.map((transaction) => (
                 <tr key={transaction.id}>
                   <td className="px-3 py-2 text-sm whitespace-nowrap">
-                    {formatTz(utcToZonedTime(new Date(transaction.created_at), TIMEZONE), 'yyyy/MM/dd HH:mm', { timeZone: TIMEZONE })}
+                    {formatTz(utcToZonedTime(new Date(transaction.created_at), TIMEZONE), 'yyyy/MM/dd HH:mm:ss', { timeZone: TIMEZONE })}
                   </td>
                   <td className="px-3 py-2 text-sm whitespace-nowrap">
                     {transaction.transaction_date 

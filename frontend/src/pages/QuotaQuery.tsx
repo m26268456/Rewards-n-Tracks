@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import api from '../utils/api';
+import { utcToZonedTime, format as formatTz } from 'date-fns-tz';
+const TIMEZONE = 'Asia/Taipei';
 
 interface QuotaInfo {
   schemeId: string | null;
@@ -13,6 +15,8 @@ interface QuotaInfo {
   manualAdjustments?: number[]; // b: 人工調整值
   totalUsedQuotas?: number[]; // c: a + b
   remainingQuotas: Array<number | null>;
+  previousUsedQuotas?: Array<number | null>; // 新增
+  previousManualAdjustments?: Array<number | null>; // 新增
   referenceAmounts: Array<number | null>;
   refreshTimes: string[];
   rewardIds: string[];
@@ -33,15 +37,34 @@ export default function QuotaQuery() {
   const rootRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    setCurrentTime(new Date().toLocaleString('zh-TW', { hour12: false }));
-    const timer = setInterval(() => setCurrentTime(new Date().toLocaleString('zh-TW', { hour12: false })), 1000);
+    const fmtNow = () =>
+      formatTz(utcToZonedTime(new Date(), TIMEZONE), 'yyyy/MM/dd HH:mm:ss', { timeZone: TIMEZONE });
+
+    setCurrentTime(fmtNow());
+    const timer = setInterval(() => setCurrentTime(fmtNow()), 1000);
     return () => clearInterval(timer);
   }, []);
 
   useEffect(() => {
     loadQuotas();
-    const interval = setInterval(loadQuotas, 60000);
-    return () => clearInterval(interval);
+    
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        loadQuotas();
+      }
+    };
+    
+    const handleFocus = () => {
+      loadQuotas();
+    };
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleFocus);
+    
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleFocus);
+    };
   }, []);
 
   useEffect(() => {
@@ -98,7 +121,9 @@ export default function QuotaQuery() {
     used: number, // a: 系統計算的額度
     remaining: number | null,
     limit: number | null,
-    manualAdjustment?: number // b: 人工調整值
+    manualAdjustment?: number, // b: 人工調整值
+    previousUsed?: number | null, // 新增：上次系統計算額度
+    previousManualAdjustment?: number | null // 新增：上次人工調整值
   ) => {
     const adjustment = manualAdjustment !== undefined ? manualAdjustment : 0;
     const totalUsed = used + adjustment; // c = a + b
@@ -117,7 +142,7 @@ export default function QuotaQuery() {
           </span>
         </div>
         <div className="text-xs text-gray-600">
-          <span className="font-medium">剩餘：</span>
+          <span className="font-medium">餘額：</span>
           <span className={remaining !== null && remaining < (limit || 0) * 0.2 ? 'text-red-600 font-semibold' : 'text-green-600'}>{remainingStr}</span>
         </div>
         <div className="text-xs text-gray-500">
@@ -141,7 +166,7 @@ export default function QuotaQuery() {
           <span className={current > 0 ? 'text-blue-600' : 'text-gray-500'}>{currentStr}</span>
         </div>
         <div className="text-xs text-gray-600">
-          <span className="font-medium">參考：</span>
+          <span className="font-medium">餘額：</span>
           <span className="text-purple-600">{referenceStr}</span>
         </div>
       </div>
@@ -184,15 +209,9 @@ export default function QuotaQuery() {
                   </th>
                   <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider whitespace-nowrap min-w-[160px]">
                     額度狀態
-                    <div className="text-[10px] font-normal text-gray-500 mt-1">
-                      已用/剩餘/上限
-                    </div>
                   </th>
                   <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider whitespace-nowrap min-w-[160px]">
                     消費資訊
-                    <div className="text-[10px] font-normal text-gray-500 mt-1">
-                      消費/參考餘額
-                    </div>
                   </th>
                   <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider whitespace-nowrap min-w-[140px]">
                     刷新時間
@@ -283,7 +302,9 @@ export default function QuotaQuery() {
                             usedQuota, 
                             remainingQuota, 
                             quotaLimit,
-                            primary.manualAdjustments?.[rIdx]
+                            primary.manualAdjustments?.[rIdx],
+                            primary.previousUsedQuotas?.[rIdx],
+                            primary.previousManualAdjustments?.[rIdx]
                           )}
                         </td>
                         <td className="px-3 py-2 text-sm align-top whitespace-nowrap min-w-[160px]">
@@ -291,6 +312,22 @@ export default function QuotaQuery() {
                         </td>
                         <td className="px-3 py-2 text-sm align-top whitespace-nowrap min-w-[140px]">
                           <div>{primary.refreshTimes?.[rIdx] || '-'}</div>
+                          {/* 顯示上次額度快照 */}
+                          {(primary.previousUsedQuotas?.[rIdx] !== null && primary.previousUsedQuotas?.[rIdx] !== undefined) ||
+                           (primary.previousManualAdjustments?.[rIdx] !== null && primary.previousManualAdjustments?.[rIdx] !== undefined) ? (
+                            <div className="text-[10px] text-gray-400 mt-1 border-t border-gray-100 pt-1">
+                              上次：
+                              {(() => {
+                                const prevUsed = primary.previousUsedQuotas?.[rIdx] ?? 0;
+                                const prevManual = primary.previousManualAdjustments?.[rIdx] ?? 0;
+                                const prevTotal = prevUsed + prevManual;
+                                if (prevManual !== 0) {
+                                  return `${prevUsed}${prevManual >= 0 ? '+' : ''}${prevManual}=${prevTotal}`;
+                                }
+                                return prevUsed.toLocaleString();
+                              })()}
+                            </div>
+                          ) : null}
                         </td>
                       </tr>
                     );

@@ -5,6 +5,9 @@ import { logger } from '../utils/logger';
 import { QuotaDbRow, QuotaRefreshType, QuotaCalculationBasis, CalculationMethod } from '../utils/types';
 import { calculateReward } from '../utils/rewardCalculation';
 import { addMonths } from 'date-fns';
+import { utcToZonedTime } from 'date-fns-tz';
+
+const TIMEZONE = 'Asia/Taipei';
 
 const router = Router();
 
@@ -26,13 +29,14 @@ function parseDateValue(input: any): Date | null {
 }
 
 function buildMonthlyWindow(day: number): { start: Date; end: Date } {
-  const now = new Date();
+  const nowUtc = new Date();
+  const now = utcToZonedTime(nowUtc, TIMEZONE);
   const safeDay = Math.min(Math.max(day, 1), 28);
   const nowDay = now.getDate();
   // A. 當下已過 OO 號：本月 OO ~ 下月 OO-1
   // B. 未到 OO 號：上月 OO ~ 本月 OO-1
   let start: Date;
-  if (nowDay > safeDay) {
+  if (nowDay >= safeDay) { // 注意：如果今天是刷新日，應該算是新週期的開始嗎？通常刷新是在 00:00，所以 >= 是新週期
     start = new Date(now.getFullYear(), now.getMonth(), safeDay, 0, 0, 0, 0);
   } else {
     start = new Date(now.getFullYear(), now.getMonth() - 1, safeDay, 0, 0, 0, 0);
@@ -95,6 +99,9 @@ router.get('/', async (_req: Request, res: Response, next: NextFunction) => {
         qt.reward_id,
         NULL::uuid as payment_reward_id,
         qt.next_refresh_at,
+        qt.used_quota,
+        qt.manual_adjustment,
+        qt.remaining_quota,
         sr.quota_limit,
         sr.quota_refresh_type,
         sr.quota_refresh_value,
@@ -117,6 +124,9 @@ router.get('/', async (_req: Request, res: Response, next: NextFunction) => {
         NULL::uuid as reward_id,
         qt.payment_reward_id,
         qt.next_refresh_at,
+        qt.used_quota,
+        qt.manual_adjustment,
+        qt.remaining_quota,
         pr.quota_limit,
         pr.quota_refresh_type,
         pr.quota_refresh_value,
@@ -147,10 +157,14 @@ router.get('/', async (_req: Request, res: Response, next: NextFunction) => {
 
           const quotaLimit = quota.quota_limit ? Number(quota.quota_limit) : null;
 
-          // 刷新時重置 manual_adjustment = 0
-          let refreshRemainingQuota: number | null = null;
+          // 計算上次結算的剩餘額度 (快照值)
+          const snapshotUsedQuota = quota.used_quota !== null ? Number(quota.used_quota) : 0;
+          const snapshotManualAdjustment = quota.manual_adjustment !== null ? Number(quota.manual_adjustment) : 0;
+
+          // 刷新後的新額度：如果是重置型，則回到 quota_limit (扣除0)，若無上限則為null
+          let newRemainingQuota: number | null = null;
           if (quotaLimit !== null) {
-            refreshRemainingQuota = Math.max(0, quotaLimit - 0);
+            newRemainingQuota = Math.max(0, quotaLimit - 0); // 扣除0代表初始狀態
           }
 
           if (quota.scheme_id) {
@@ -158,31 +172,35 @@ router.get('/', async (_req: Request, res: Response, next: NextFunction) => {
               `UPDATE quota_trackings
                SET used_quota = 0,
                    manual_adjustment = 0,
-                   remaining_quota = $1,
+                   previous_used_quota = $1,
+                   previous_manual_adjustment = $2,
+                   remaining_quota = $3,
                    current_amount = 0,
-                   next_refresh_at = $2,
+                   next_refresh_at = $4,
                    last_refresh_at = CURRENT_TIMESTAMP,
                    updated_at = CURRENT_TIMESTAMP
-               WHERE scheme_id = $3 
-                 AND (payment_method_id = $4 OR (payment_method_id IS NULL AND $4 IS NULL))
-                 AND reward_id = $5
+               WHERE scheme_id = $5 
+                 AND (payment_method_id = $6 OR (payment_method_id IS NULL AND $6 IS NULL))
+                 AND reward_id = $7
                  AND payment_reward_id IS NULL`,
-              [refreshRemainingQuota, nextRefresh, quota.scheme_id, quota.payment_method_id, quota.reward_id]
+              [snapshotUsedQuota, snapshotManualAdjustment, newRemainingQuota, nextRefresh, quota.scheme_id, quota.payment_method_id, quota.reward_id]
             );
           } else if (quota.payment_method_id && quota.payment_reward_id) {
             await client.query(
               `UPDATE quota_trackings
                SET used_quota = 0,
                    manual_adjustment = 0,
-                   remaining_quota = $1,
+                   previous_used_quota = $1,
+                   previous_manual_adjustment = $2,
+                   remaining_quota = $3,
                    current_amount = 0,
-                   next_refresh_at = $2,
+                   next_refresh_at = $4,
                    last_refresh_at = CURRENT_TIMESTAMP,
                    updated_at = CURRENT_TIMESTAMP
-               WHERE payment_method_id = $3 
-                 AND payment_reward_id = $4
+               WHERE payment_method_id = $5 
+                 AND payment_reward_id = $6
                  AND scheme_id IS NULL`,
-              [refreshRemainingQuota, nextRefresh, quota.payment_method_id, quota.payment_reward_id]
+              [snapshotUsedQuota, snapshotManualAdjustment, newRemainingQuota, nextRefresh, quota.payment_method_id, quota.payment_reward_id]
             );
           }
         }
@@ -216,6 +234,8 @@ router.get('/', async (_req: Request, res: Response, next: NextFunction) => {
          sr.display_order,
          qt.used_quota,
          qt.remaining_quota,
+         qt.previous_used_quota,
+         qt.previous_manual_adjustment,
          qt.current_amount,
          qt.manual_adjustment,
          qt.next_refresh_at
@@ -252,6 +272,8 @@ router.get('/', async (_req: Request, res: Response, next: NextFunction) => {
          pr.display_order,
          COALESCE(qt.used_quota, 0) as used_quota,
          qt.remaining_quota,
+         qt.previous_used_quota,
+         qt.previous_manual_adjustment,
          COALESCE(qt.current_amount, 0) as current_amount,
          qt.manual_adjustment,
          qt.next_refresh_at
@@ -286,6 +308,13 @@ router.get('/', async (_req: Request, res: Response, next: NextFunction) => {
         manualAdjustmentRaw !== null && manualAdjustmentRaw !== undefined
           ? Number(manualAdjustmentRaw)
           : 0;
+
+      const previousUsedQuota = row.previous_used_quota !== null && row.previous_used_quota !== undefined
+          ? Number(row.previous_used_quota)
+          : null;
+      const previousManualAdjustment = row.previous_manual_adjustment !== null && row.previous_manual_adjustment !== undefined
+          ? Number(row.previous_manual_adjustment)
+          : null;
 
       const window = getQuotaWindow(
         (row.quota_refresh_type as QuotaRefreshType | null) || null,
@@ -383,6 +412,8 @@ router.get('/', async (_req: Request, res: Response, next: NextFunction) => {
         manualAdjustment, // b: 人工調整值
         totalUsedQuota, // c: a + b
         remainingQuota,
+        previousUsedQuota, // 新增：上次系統計算額度
+        previousManualAdjustment, // 新增：上次人工調整值
         referenceAmount,
         refreshTime,
         quotaRefreshType: row.quota_refresh_type || null,
@@ -409,6 +440,8 @@ router.get('/', async (_req: Request, res: Response, next: NextFunction) => {
           manualAdjustment: null,
           totalUsedQuota: 0,
           remainingQuota: null,
+          previousUsedQuota: null,
+          previousManualAdjustment: null,
           referenceAmount: null,
           refreshTime: null,
           quotaRefreshType: null,
@@ -443,6 +476,8 @@ router.get('/', async (_req: Request, res: Response, next: NextFunction) => {
           r.totalUsedQuota !== null && r.totalUsedQuota !== undefined ? r.totalUsedQuota : r.usedQuota
         ), // c: a + b
         remainingQuotas: quota.rewards.map((r: any) => r.remainingQuota),
+        previousUsedQuotas: quota.rewards.map((r: any) => r.previousUsedQuota),
+        previousManualAdjustments: quota.rewards.map((r: any) => r.previousManualAdjustment),
         referenceAmounts: quota.rewards.map((r: any) => r.referenceAmount),
         refreshTimes: quota.rewards.map((r: any) => r.refreshTime),
         rewardIds: quota.rewards.map((r: any) => r.rewardId),

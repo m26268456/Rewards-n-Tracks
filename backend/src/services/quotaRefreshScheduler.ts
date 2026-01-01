@@ -66,6 +66,9 @@ async function checkAndRefreshQuotas() {
         qt.reward_id,
         NULL::uuid as payment_reward_id,
         qt.next_refresh_at,
+        qt.used_quota,
+        qt.manual_adjustment,
+        qt.remaining_quota,
         sr.quota_limit,
         sr.quota_refresh_type,
         sr.quota_refresh_value,
@@ -88,6 +91,9 @@ async function checkAndRefreshQuotas() {
         NULL::uuid as reward_id,
         qt.payment_reward_id,
         qt.next_refresh_at,
+        qt.used_quota,
+        qt.manual_adjustment,
+        qt.remaining_quota,
         pr.quota_limit,
         pr.quota_refresh_type,
         pr.quota_refresh_value,
@@ -123,6 +129,16 @@ async function checkAndRefreshQuotas() {
 
           const quotaLimit = quota.quota_limit ? parseFloat(quota.quota_limit) : null;
 
+          // 計算上次結算的剩餘額度 (快照值)
+          const snapshotUsedQuota = quota.used_quota !== null ? Number(quota.used_quota) : 0;
+          const snapshotManualAdjustment = quota.manual_adjustment !== null ? Number(quota.manual_adjustment) : 0;
+
+          // 刷新後的新額度：如果是重置型，則回到 quota_limit (扣除0)，若無上限則為null
+          let newRemainingQuota: number | null = null;
+          if (quotaLimit !== null) {
+            newRemainingQuota = Math.max(0, quotaLimit - 0); // 扣除0代表初始狀態
+          }
+
           // 執行刷新：重置已用額度、人工干預、更新剩餘額度、設定下次刷新時間
           // 注意：不論刷新類型為何（monthly/date/activity），都會：
           // 1. 重置 used_quota = 0（計算區間會在下次查詢時自動更新）
@@ -133,13 +149,15 @@ async function checkAndRefreshQuotas() {
             `UPDATE quota_trackings
              SET used_quota = 0,
                  manual_adjustment = 0,
-                 remaining_quota = $1,
+                 previous_used_quota = $1,
+                 previous_manual_adjustment = $2,
+                 remaining_quota = $3,
                  current_amount = 0,
-                 next_refresh_at = $2,
+                 next_refresh_at = $4,
                  last_refresh_at = CURRENT_TIMESTAMP,
                  updated_at = CURRENT_TIMESTAMP
-             WHERE id = $3`,
-            [quotaLimit, nextRefresh, quota.tracking_id]
+             WHERE id = $5`,
+            [snapshotUsedQuota, snapshotManualAdjustment, newRemainingQuota, nextRefresh, quota.tracking_id]
           );
           
           refreshedCount++;

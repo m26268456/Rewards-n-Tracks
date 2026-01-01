@@ -5,8 +5,7 @@ WORKDIR /app
 
 # 複製依賴檔案並安裝所有依賴（包括 devDependencies，用於構建）
 COPY package*.json ./
-# 使用 npm ci（更可重現），並強制包含 devDependencies，避免雲端環境預設略過 devDeps 導致 tsc/rimraf 不存在
-RUN npm ci --include=dev
+RUN npm install
 
 # 複製原始碼
 COPY . .
@@ -33,7 +32,7 @@ WORKDIR /app
 
 # 只複製生產依賴
 COPY package*.json ./
-RUN npm ci --omit=dev
+RUN npm install --only=production
 
 # 從構建階段複製構建好的檔案
 COPY --from=builder /app/dist ./dist

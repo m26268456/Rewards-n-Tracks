@@ -6,7 +6,10 @@ import { CalculationMethod, QuotaCalculationBasis } from '../utils/types';
 import { logger } from '../utils/logger';
 import { validate } from '../middleware/validate';
 import { createTransactionSchema } from '../utils/validators';
+import { format as formatTz, utcToZonedTime } from 'date-fns-tz';
 import * as XLSX from 'xlsx';
+
+const TIMEZONE = 'Asia/Taipei';
 
 const router = Router();
 
@@ -569,11 +572,11 @@ router.get('/export', async (_req: Request, res: Response, next: NextFunction) =
     const pad = (n: number) => String(n).padStart(2, '0');
     const formatDateTime = (d: Date | null) => {
       if (!d || isNaN(d.getTime())) return '';
-      return `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+      return formatTz(utcToZonedTime(d, TIMEZONE), 'yyyy/MM/dd HH:mm:ss', { timeZone: TIMEZONE });
     };
     const formatDate = (d: Date | null) => {
       if (!d || isNaN(d.getTime())) return '';
-      return `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())}`;
+      return formatTz(utcToZonedTime(d, TIMEZONE), 'yyyy/MM/dd', { timeZone: TIMEZONE });
     };
 
     const result = await pool.query(
