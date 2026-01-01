@@ -441,10 +441,9 @@ export default function QuotaManagement() {
                 const basisText = basis === 'statement' ? '帳單總額' : '單筆回饋';
 
                 const groupColorIdx = colorIndexMap.get(sharedKey) || 0;
-                const soloPairs = [['bg-white','bg-gray-50'], ['bg-gray-50','bg-white']];
-                const colorPair = soloPairs[groupColorIdx % 2];
-                // 同一方案使用與額度查詢一致的底色（不依 rIdx 交錯）
-                const rowBgColor = colorPair[0];
+                
+                // [Modified] 交錯邏輯：方案交錯 + 組成從該方案顏色開始交錯
+                const rowBgColor = (groupColorIdx + rIdx) % 2 === 0 ? 'bg-white' : 'bg-blue-50';
                 const rowBorder = 'border-gray-200';
 
                 return (
@@ -452,13 +451,13 @@ export default function QuotaManagement() {
                     key={`${sharedKey}-${primary.__index}-${rIdx}`}
                     className={`${rowBgColor} border-l-4 ${rowBorder}`}
                   >
-                    {isFirst && (
-                      <td rowSpan={rowsToRender.length} className={`px-3 py-2 text-sm font-medium sticky left-0 ${rowBgColor} z-10 border-r border-gray-200 align-middle whitespace-nowrap min-w-[140px]`}>
+                    <td className={`px-3 py-2 text-sm font-medium sticky left-0 ${rowBgColor} z-10 border-r border-gray-200 align-middle whitespace-nowrap min-w-[140px]`}>
+                      {isFirst && (
                         <div className="flex items-center">
                           <div className="font-semibold">{rootNameDisplay}</div>
                         </div>
-                      </td>
-                    )}
+                      )}
+                    </td>
                     <td className="px-3 py-2 text-sm align-top whitespace-nowrap min-w-[120px]">
                       {isEditingR ? (
                         <div className="space-y-2">

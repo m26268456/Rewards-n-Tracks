@@ -1,6 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
 import api from '../utils/api';
 
+import { utcToZonedTime } from 'date-fns-tz';
+import { addDays } from 'date-fns';
+
+const TIMEZONE = 'Asia/Taipei';
+
 // 輔助函數：將文字中的網址轉換為可點擊的連結
 function linkify(text: string): string {
   if (!text) return '';
@@ -39,9 +44,18 @@ const formatPercent = (v: any) => {
 };
 
 // 過期/額度滿判斷
-const now = new Date();
-const isExpiredScheme = (activityEndDate?: string) =>
-  !!activityEndDate && new Date(activityEndDate) < now;
+const isExpiredScheme = (activityEndDate?: string) => {
+  if (!activityEndDate) return false;
+
+  const dateStr = String(activityEndDate).slice(0, 10); // YYYY-MM-DD
+  const [y, m, d] = dateStr.split('-').map(Number);
+  if (!y || !m || !d) return false;
+
+  const nowTaipei = utcToZonedTime(new Date(), TIMEZONE);
+  const expireAtTaipei = addDays(new Date(y, m - 1, d, 0, 0, 0, 0), 1); // 結束日隔天 00:00 才過期
+
+  return nowTaipei >= expireAtTaipei;
+};
 
 const isQuotaFull = (reward: any) =>
   reward &&
@@ -562,14 +576,16 @@ export default function QueryRewards() {
                                             </span>
                                             {/* 過期/超額徽章（僅在一般結果顯示） */}
                                             {type === 'normal' && (() => {
-                                              const totalExpired = item.totalExpired || 0;
-                                              const totalFull = item.totalFull || 0;
                                               const badges = [];
-                                              if (totalExpired > 0) {
-                                                badges.push(<span key="expired" className="badge-danger">{formatPercent(totalExpired)}% 已過期</span>);
-                                              }
-                                              if (totalFull > 0) {
-                                                badges.push(<span key="full" className="badge-warning">{formatPercent(totalFull)}% 已超額</span>);
+                                              const isExpired = !item.isExcluded && item.activityEndDate && isExpiredScheme(item.activityEndDate);
+
+                                              if (isExpired) {
+                                                badges.push(<span key="expired" className="badge-danger">已過期</span>);
+                                              } else {
+                                                const totalFull = item.totalFull || 0;
+                                                if (totalFull > 0) {
+                                                  badges.push(<span key="full" className="badge-warning">{formatPercent(totalFull)}% 已超額</span>);
+                                                }
                                               }
                                               return badges;
                                             })()}

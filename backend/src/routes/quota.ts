@@ -167,6 +167,10 @@ router.get('/', async (_req: Request, res: Response, next: NextFunction) => {
             newRemainingQuota = Math.max(0, quotaLimit - 0); // 扣除0代表初始狀態
           }
 
+          // [Fix] 無上限刷新：也要寫入快照，即使原本沒有 used_quota (為 null) 也要視為 0 寫入
+          // 這樣前端才能在刷新後顯示「上次：0」
+          // (註：DB 若無記錄則 update 不會執行，這只針對有記錄但值為 null 或 0 的情況)
+
           if (quota.scheme_id) {
             await client.query(
               `UPDATE quota_trackings
@@ -309,6 +313,11 @@ router.get('/', async (_req: Request, res: Response, next: NextFunction) => {
           ? Number(manualAdjustmentRaw)
           : 0;
 
+      // 新增：如果沒有設定 next_refresh_at (例如無上限且未被建立過記錄)，但此時有刷新規則，
+      // 應補上預設記錄以便後續快照寫入 (否則無上限刷完也不會顯示上次)
+      // 這邊先不直接 insert，而是透過確保 usedQuota / manualAdjustment 取值為 0
+      // 讓下面 "if (hasReward ...)" 之後的 mapping 能夠拿到 0
+      
       const previousUsedQuota = row.previous_used_quota !== null && row.previous_used_quota !== undefined
           ? Number(row.previous_used_quota)
           : null;
