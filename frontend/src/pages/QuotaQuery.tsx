@@ -227,6 +227,11 @@ export default function QuotaQuery() {
                   const sortedItems = quotas.slice();
                   
                   const primary = sortedItems[0];
+                  // 顯示用名稱（只取最後一段，避免 "卡名-方案名" 過長）
+                  const rootName = primary.schemeName || primary.name || '';
+                  const rootNameParts = rootName.split('-');
+                  const rootNameDisplay =
+                    rootNameParts.length > 1 ? rootNameParts[rootNameParts.length - 1] : rootName;
                   let validRewardIndices: number[] = [];
                   if (primary.rewardIds && primary.rewardIds.length > 0) {
                     primary.rewardIds.forEach((_, index) => validRewardIndices.push(index));
