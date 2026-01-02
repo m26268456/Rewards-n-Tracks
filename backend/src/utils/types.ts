@@ -2,7 +2,7 @@
 
 export type CalculationMethod = 'round' | 'floor' | 'ceil';
 
-export type QuotaRefreshType = 'monthly' | 'date' | 'activity';
+export type QuotaRefreshType = 'monthly' | 'date';
 
 // 新增計算基準型別：單筆計算 (transaction) vs 帳單總額 (statement)
 export type QuotaCalculationBasis = 'transaction' | 'statement';

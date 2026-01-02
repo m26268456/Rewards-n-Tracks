@@ -134,9 +134,7 @@ async function recomputeSchemeRewardTracking(schemeId: string, rewardId: string)
         reward.quota_refresh_date
           ? new Date(reward.quota_refresh_date).toISOString().split('T')[0]
           : null,
-        reward.activity_end_date
-          ? new Date(reward.activity_end_date).toISOString().split('T')[0]
-          : null
+        null
       );
       await client.query(
         `INSERT INTO quota_trackings

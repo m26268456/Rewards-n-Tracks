@@ -146,14 +146,18 @@ router.get('/', async (_req: Request, res: Response, next: NextFunction) => {
       
       for (const quota of allQuotasToCheck) {
         if (quota.next_refresh_at && shouldRefreshQuota(new Date(quota.next_refresh_at))) {
-          const nextRefresh = calculateNextRefreshTime(
+          // [Fix] 移除 activity_end_date 參數，並處理 date 類型的單次刷新邏輯
+          let nextRefresh = calculateNextRefreshTime(
             quota.quota_refresh_type,
             quota.quota_refresh_value,
             quota.quota_refresh_date ? new Date(quota.quota_refresh_date).toISOString().split('T')[0] : null,
-            quota.activity_end_date
-              ? new Date(quota.activity_end_date).toISOString().split('T')[0]
-              : null
+            null
           );
+
+          // [Fix] 如果是指定日期 (date) 且本次刷新已執行，則下一次設為 NULL (不再刷新)
+          if (quota.quota_refresh_type === 'date') {
+             nextRefresh = null;
+          }
 
           const quotaLimit = quota.quota_limit ? Number(quota.quota_limit) : null;
 
@@ -169,44 +173,21 @@ router.get('/', async (_req: Request, res: Response, next: NextFunction) => {
 
           // [Fix] 無上限刷新：也要寫入快照，即使原本沒有 used_quota (為 null) 也要視為 0 寫入
           // 這樣前端才能在刷新後顯示「上次：0」
-          // (註：DB 若無記錄則 update 不會執行，這只針對有記錄但值為 null 或 0 的情況)
-
-          if (quota.scheme_id) {
-            await client.query(
-              `UPDATE quota_trackings
-               SET used_quota = 0,
-                   manual_adjustment = 0,
-                   previous_used_quota = $1,
-                   previous_manual_adjustment = $2,
-                   remaining_quota = $3,
-                   current_amount = 0,
-                   next_refresh_at = $4,
-                   last_refresh_at = CURRENT_TIMESTAMP,
-                   updated_at = CURRENT_TIMESTAMP
-               WHERE scheme_id = $5 
-                 AND (payment_method_id = $6 OR (payment_method_id IS NULL AND $6 IS NULL))
-                 AND reward_id = $7
-                 AND payment_reward_id IS NULL`,
-              [snapshotUsedQuota, snapshotManualAdjustment, newRemainingQuota, nextRefresh, quota.scheme_id, quota.payment_method_id, quota.reward_id]
-            );
-          } else if (quota.payment_method_id && quota.payment_reward_id) {
-            await client.query(
-              `UPDATE quota_trackings
-               SET used_quota = 0,
-                   manual_adjustment = 0,
-                   previous_used_quota = $1,
-                   previous_manual_adjustment = $2,
-                   remaining_quota = $3,
-                   current_amount = 0,
-                   next_refresh_at = $4,
-                   last_refresh_at = CURRENT_TIMESTAMP,
-                   updated_at = CURRENT_TIMESTAMP
-               WHERE payment_method_id = $5 
-                 AND payment_reward_id = $6
-                 AND scheme_id IS NULL`,
-              [snapshotUsedQuota, snapshotManualAdjustment, newRemainingQuota, nextRefresh, quota.payment_method_id, quota.payment_reward_id]
-            );
-          }
+          // [Fix] 直接使用 tracking_id 更新，確保準確命中
+          await client.query(
+            `UPDATE quota_trackings
+             SET used_quota = 0,
+                 manual_adjustment = 0,
+                 previous_used_quota = $1,
+                 previous_manual_adjustment = $2,
+                 remaining_quota = $3,
+                 current_amount = 0,
+                 next_refresh_at = $4,
+                 last_refresh_at = CURRENT_TIMESTAMP,
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE id = $5`,
+            [snapshotUsedQuota, snapshotManualAdjustment, newRemainingQuota, nextRefresh, quota.tracking_id]
+          );
         }
       }
       await client.query('COMMIT');
@@ -291,7 +272,6 @@ router.get('/', async (_req: Request, res: Response, next: NextFunction) => {
 
     // 3. 資料轉換 (Mapping) + 動態重新計算額度
     const quotaMap = new Map<string, any>(); 
-
     const schemeRows = schemeQuotasResult.rows as any[];
     const paymentRows = paymentQuotasResult.rows as any[];
     const allRows = [...schemeRows, ...paymentRows];
@@ -408,7 +388,7 @@ router.get('/', async (_req: Request, res: Response, next: NextFunction) => {
         (row.quota_refresh_type as QuotaRefreshType | null) || null,
         row.quota_refresh_value || null,
         row.quota_refresh_date ? new Date(row.quota_refresh_date).toISOString().split('T')[0] : null,
-        row.activity_end_date ? new Date(row.activity_end_date).toISOString().split('T')[0] : null
+        null
       );
 
       quota.rewards.push({
@@ -608,9 +588,7 @@ router.put('/:schemeId', async (req: Request, res: Response, next: NextFunction)
             reward.quota_refresh_date
               ? new Date(reward.quota_refresh_date).toISOString().split('T')[0]
               : null,
-            reward.activity_end_date
-              ? new Date(reward.activity_end_date).toISOString().split('T')[0]
-              : null
+            null
           )
         : null;
 

@@ -536,7 +536,6 @@ export default function QuotaManagement() {
                             <option value="">不刷新</option>
                             <option value="monthly">每月OO號</option>
                             <option value="date">指定日期</option>
-                            <option value="activity">活動結束</option>
                           </select>
                           {rewardForm.refreshType === 'monthly' && (
                             <input 

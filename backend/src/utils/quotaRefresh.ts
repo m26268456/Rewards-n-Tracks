@@ -1,4 +1,4 @@
-import { addMonths, isAfter, startOfMonth, setDate, addDays } from 'date-fns';
+import { addMonths, isAfter, startOfMonth, setDate } from 'date-fns';
 import { zonedTimeToUtc, utcToZonedTime } from 'date-fns-tz';
 import { QuotaRefreshType } from './types';
 
@@ -33,7 +33,7 @@ export function calculateNextRefreshTime(
   refreshType: QuotaRefreshType | null,
   refreshValue: number | null,
   refreshDate: string | null,
-  activityEndDate: string | null
+  _activityEndDate: string | null // 參數保留以相容舊有呼叫，但不再使用
 ): Date | null {
   if (!refreshType) return null;
 
@@ -67,26 +67,9 @@ export function calculateNextRefreshTime(
       // 構造台北時間的日期
       const targetDateTaipei = new Date(year, month - 1, day, 0, 0, 0, 0);
       
-      // 如果指定日期已過，則不再刷新 (回傳 null 或保持原樣，視業務邏輯而定，此處回傳 null 表示不再刷新)
-      if (!isAfter(targetDateTaipei, nowTaipei)) {
-        return null; 
-      }
-      
+      // [Fix] 即使日期已過，也要回傳該日期，讓系統能偵測到「已過期」並執行刷新(歸零)動作
+      // 之後在刷新執行時，會將 next_refresh_at 設為 NULL，避免重複刷新
       return toUtcDate(targetDateTaipei);
-
-    case 'activity':
-      if (!activityEndDate) return null;
-      // 活動結束日刷新通常指活動結束後歸零或重置
-      const [actYear, actMonth, actDay] = activityEndDate.split('-').map(Number);
-      // 改為隔天凌晨（活動結束隔天才算過期/刷新）
-      const activityEndTaipei = addDays(new Date(actYear, actMonth - 1, actDay, 0, 0, 0, 0), 1);
-      
-      // 邏輯同上，只有在未來才設定
-      if (!isAfter(activityEndTaipei, nowTaipei)) {
-        return null;
-      }
-      
-      return toUtcDate(activityEndTaipei);
 
     default:
       return null;
@@ -115,7 +98,7 @@ export function formatRefreshTime(
   refreshType: QuotaRefreshType | null,
   refreshValue: number | null,
   refreshDate: string | null,
-  activityEndDate: string | null
+  _activityEndDate: string | null
 ): string {
   if (!refreshType) return '';
 
@@ -127,9 +110,6 @@ export function formatRefreshTime(
     case 'date':
       if (!refreshDate) return '';
       return `${refreshDate}`;
-    case 'activity':
-      if (!activityEndDate) return '';
-      return `活動結束日: ${activityEndDate}`;
     default:
       return '';
   }

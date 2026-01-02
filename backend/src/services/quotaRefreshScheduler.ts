@@ -116,16 +116,20 @@ async function checkAndRefreshQuotas() {
         const nextRefreshAt = quota.next_refresh_at ? new Date(quota.next_refresh_at) : null;
         if (nextRefreshAt && shouldRefreshQuota(nextRefreshAt)) {
           // 計算下一次刷新時間
-          const nextRefresh = calculateNextRefreshTime(
+          // [Fix] 移除 activity_end_date 參數，並處理 date 類型的單次刷新邏輯
+          let nextRefresh = calculateNextRefreshTime(
             quota.quota_refresh_type,
             quota.quota_refresh_value,
             quota.quota_refresh_date
               ? (quota.quota_refresh_date instanceof Date ? quota.quota_refresh_date.toISOString().split('T')[0] : quota.quota_refresh_date)
               : null,
-            quota.activity_end_date
-              ? (quota.activity_end_date instanceof Date ? quota.activity_end_date.toISOString().split('T')[0] : quota.activity_end_date)
-              : null
+            null
           );
+
+          // [Fix] 如果是指定日期 (date) 且本次刷新已執行，則下一次設為 NULL (不再刷新)
+          if (quota.quota_refresh_type === 'date') {
+             nextRefresh = null;
+          }
 
           const quotaLimit = quota.quota_limit ? parseFloat(quota.quota_limit) : null;
 
@@ -140,7 +144,7 @@ async function checkAndRefreshQuotas() {
           }
 
           // 執行刷新：重置已用額度、人工干預、更新剩餘額度、設定下次刷新時間
-          // 注意：不論刷新類型為何（monthly/date/activity），都會：
+          // 注意：不論刷新類型為何（monthly/date），都會：
           // 1. 重置 used_quota = 0（計算區間會在下次查詢時自動更新）
           // 2. 重置 manual_adjustment = 0（清空人工干預）
           // 3. 重置 current_amount = 0（重置當前金額）

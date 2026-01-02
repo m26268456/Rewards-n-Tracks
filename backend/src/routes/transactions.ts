@@ -173,9 +173,7 @@ router.post('/', validate(createTransactionSchema), async (req: Request, res: Re
             reward.quota_refresh_date
               ? new Date(reward.quota_refresh_date).toISOString().split('T')[0]
               : null,
-            reward.activity_end_date
-              ? new Date(reward.activity_end_date).toISOString().split('T')[0]
-              : null
+            null
           );
 
           await client.query(
@@ -301,9 +299,7 @@ router.post('/', validate(createTransactionSchema), async (req: Request, res: Re
                   r.quota_refresh_date
                     ? new Date(r.quota_refresh_date).toISOString().split('T')[0]
                     : null,
-                  r.activity_end_date
-                    ? new Date(r.activity_end_date).toISOString().split('T')[0]
-                    : null
+                  null
                 );
               }
             } else {
@@ -426,9 +422,7 @@ router.delete('/:id', async (req: Request, res: Response, next: NextFunction) =>
             refreshSettings.quota_refresh_date
               ? new Date(refreshSettings.quota_refresh_date).toISOString().split('T')[0]
               : null,
-            refreshSettings.activity_end_date
-              ? new Date(refreshSettings.activity_end_date).toISOString().split('T')[0]
-              : null
+            null
           )
         : null;
 
