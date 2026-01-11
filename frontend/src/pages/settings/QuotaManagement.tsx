@@ -12,9 +12,7 @@ const formatQuotaInfo = (
   isEditing: boolean, 
   editingValue?: string, 
   onEditingChange?: (val: string) => void, 
-  manualAdjustment?: number, // b: 人工調整值（從後端資料取得）
-  previousUsed?: number | null, // 新增：上次系統計算額度
-  previousManualAdjustment?: number | null // 新增：上次人工調整值
+  manualAdjustment?: number // b: 人工調整值（從後端資料取得）
 ) => {
   const baseUsed = Number.isFinite(used) ? used : 0;
   const baseRemaining = remaining === null ? null : (Number.isFinite(remaining as number) ? (remaining as number) : 0);
@@ -68,22 +66,6 @@ const formatQuotaInfo = (
         <span className={remaining !== null && remaining < (limit || 0) * 0.2 ? 'text-red-600 font-semibold' : 'text-green-600'}>{remainingStr}</span>
       </div>
       <div className="text-xs text-gray-500"><span className="font-medium">上限：</span>{limitStr}</div>
-      {/* 顯示上次額度快照 */}
-      {(previousUsed !== null && previousUsed !== undefined) ||
-       (previousManualAdjustment !== null && previousManualAdjustment !== undefined) ? (
-        <div className="text-[10px] text-gray-400 mt-1 border-t border-gray-100 pt-1">
-          上次：
-          {(() => {
-            const prevUsed = previousUsed ?? 0;
-            const prevManual = previousManualAdjustment ?? 0;
-            const prevTotal = prevUsed + prevManual;
-            if (prevManual !== 0) {
-              return `${prevUsed}${prevManual >= 0 ? '+' : ''}${prevManual}=${prevTotal}`;
-            }
-            return prevUsed.toLocaleString();
-          })()}
-        </div>
-      ) : null}
     </div>
   );
 };
@@ -520,9 +502,7 @@ export default function QuotaManagement() {
                         isEditingR, // 使用 isEditingR 來控制編輯模式
                         quotaAdjust, 
                         handleQuotaAdjustChange,
-                        primary.manualAdjustments?.[rIdx], // b: 人工調整值（從後端資料取得）
-                        primary.previousUsedQuotas?.[rIdx],
-                        primary.previousManualAdjustments?.[rIdx]
+                        primary.manualAdjustments?.[rIdx] // b: 人工調整值（從後端資料取得）
                       )}
                     </td>
                     <td className="px-3 py-2 text-sm align-top whitespace-nowrap min-w-[180px]">
@@ -573,22 +553,23 @@ export default function QuotaManagement() {
                       ) : (
                         <div>
                           <div>{primary.refreshTimes?.[rIdx] || '-'}</div>
-                          {/* 顯示上次額度快照 */}
-                          {(primary.previousUsedQuotas?.[rIdx] !== null && primary.previousUsedQuotas?.[rIdx] !== undefined) ||
-                           (primary.previousManualAdjustments?.[rIdx] !== null && primary.previousManualAdjustments?.[rIdx] !== undefined) ? (
-                            <div className="text-[10px] text-gray-400 mt-1 border-t border-gray-100 pt-1">
-                              上次：
-                              {(() => {
-                                const prevUsed = primary.previousUsedQuotas?.[rIdx] ?? 0;
-                                const prevManual = primary.previousManualAdjustments?.[rIdx] ?? 0;
-                                const prevTotal = prevUsed + prevManual;
-                                if (prevManual !== 0) {
-                                  return `${prevUsed}${prevManual >= 0 ? '+' : ''}${prevManual}=${prevTotal}`;
+                          {/* 顯示上次額度快照（常態顯示） */}
+                          <div className="text-[10px] text-gray-400 mt-1 border-t border-gray-100 pt-1">
+                            {(() => {
+                              const prevUsed = primary.previousUsedQuotas?.[rIdx] ?? null;
+                              const prevManual = primary.previousManualAdjustments?.[rIdx] ?? null;
+                              if (prevUsed !== null || prevManual !== null) {
+                                const prevUsedVal = prevUsed ?? 0;
+                                const prevManualVal = prevManual ?? 0;
+                                const prevTotal = prevUsedVal + prevManualVal;
+                                if (prevManualVal !== 0) {
+                                  return `上次：${prevUsedVal}${prevManualVal >= 0 ? '+' : ''}${prevManualVal}=${prevTotal}`;
                                 }
-                                return prevUsed.toLocaleString();
-                              })()}
-                            </div>
-                          ) : null}
+                                return `上次：${prevUsedVal.toLocaleString()}`;
+                              }
+                              return '上次：NA';
+                            })()}
+                          </div>
                         </div>
                       )}
                     </td>

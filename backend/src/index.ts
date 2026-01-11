@@ -95,7 +95,7 @@ const startServer = async () => {
     
     // 啟動額度刷新定時任務 (混合模式：可透過環境變數控制是否啟用)
     if (process.env.ENABLE_QUOTA_REFRESH_SCHEDULER === 'true') {
-      startQuotaRefreshScheduler();
+    startQuotaRefreshScheduler();
     } else {
       console.log('💡 額度刷新定時任務已停用 (ENABLE_QUOTA_REFRESH_SCHEDULER 未設定或為 false)');
     }

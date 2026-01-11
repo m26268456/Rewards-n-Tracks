@@ -121,9 +121,7 @@ export default function QuotaQuery() {
     used: number, // a: 系統計算的額度
     remaining: number | null,
     limit: number | null,
-    manualAdjustment?: number, // b: 人工調整值
-    previousUsed?: number | null, // 新增：上次系統計算額度
-    previousManualAdjustment?: number | null // 新增：上次人工調整值
+    manualAdjustment?: number // b: 人工調整值
   ) => {
     const adjustment = manualAdjustment !== undefined ? manualAdjustment : 0;
     const totalUsed = used + adjustment; // c = a + b
@@ -299,9 +297,7 @@ export default function QuotaQuery() {
                             usedQuota, 
                             remainingQuota, 
                             quotaLimit,
-                            primary.manualAdjustments?.[rIdx],
-                            primary.previousUsedQuotas?.[rIdx],
-                            primary.previousManualAdjustments?.[rIdx]
+                            primary.manualAdjustments?.[rIdx]
                           )}
                         </td>
                         <td className="px-3 py-2 text-sm align-top whitespace-nowrap min-w-[160px]">
@@ -309,22 +305,23 @@ export default function QuotaQuery() {
                         </td>
                         <td className="px-3 py-2 text-sm align-top whitespace-nowrap min-w-[140px]">
                           <div>{primary.refreshTimes?.[rIdx] || '-'}</div>
-                          {/* 顯示上次額度快照 */}
-                          {(primary.previousUsedQuotas?.[rIdx] !== null && primary.previousUsedQuotas?.[rIdx] !== undefined) ||
-                           (primary.previousManualAdjustments?.[rIdx] !== null && primary.previousManualAdjustments?.[rIdx] !== undefined) ? (
-                            <div className="text-[10px] text-gray-400 mt-1 border-t border-gray-100 pt-1">
-                              上次：
-                              {(() => {
-                                const prevUsed = primary.previousUsedQuotas?.[rIdx] ?? 0;
-                                const prevManual = primary.previousManualAdjustments?.[rIdx] ?? 0;
-                                const prevTotal = prevUsed + prevManual;
-                                if (prevManual !== 0) {
-                                  return `${prevUsed}${prevManual >= 0 ? '+' : ''}${prevManual}=${prevTotal}`;
+                          {/* 顯示上次額度快照（常態顯示） */}
+                          <div className="text-[10px] text-gray-400 mt-1 border-t border-gray-100 pt-1">
+                            {(() => {
+                              const prevUsed = primary.previousUsedQuotas?.[rIdx] ?? null;
+                              const prevManual = primary.previousManualAdjustments?.[rIdx] ?? null;
+                              if (prevUsed !== null || prevManual !== null) {
+                                const prevUsedVal = prevUsed ?? 0;
+                                const prevManualVal = prevManual ?? 0;
+                                const prevTotal = prevUsedVal + prevManualVal;
+                                if (prevManualVal !== 0) {
+                                  return `上次：${prevUsedVal}${prevManualVal >= 0 ? '+' : ''}${prevManualVal}=${prevTotal}`;
                                 }
-                                return prevUsed.toLocaleString();
-                              })()}
-                            </div>
-                          ) : null}
+                                return `上次：${prevUsedVal.toLocaleString()}`;
+                              }
+                              return '上次：NA';
+                            })()}
+                          </div>
                         </td>
                       </tr>
                     );

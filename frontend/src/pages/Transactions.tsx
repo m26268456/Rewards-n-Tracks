@@ -190,7 +190,7 @@ export default function Transactions() {
           alert('交易已新增');
         }
       } else {
-        alert('交易已新增');
+      alert('交易已新增');
       }
       loadTransactions();
       setFormData({
@@ -210,7 +210,14 @@ export default function Transactions() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('確定要刪除這筆交易嗎？')) return;
+    // 取得交易資料以顯示事由
+    const transaction = transactions.find(t => t.id === id);
+    const reason = transaction?.reason || '';
+    const confirmMessage = reason 
+      ? `確定要刪除交易[${reason}]嗎？`
+      : '確定要刪除這筆交易嗎？';
+    
+    if (!confirm(confirmMessage)) return;
 
     try {
       await api.delete(`/transactions/${id}`);

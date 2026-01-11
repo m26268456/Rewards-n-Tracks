@@ -4,7 +4,7 @@ import { shouldRefreshQuota, calculateNextRefreshTime, formatRefreshTime } from 
 import { logger } from '../utils/logger';
 import { QuotaDbRow, QuotaRefreshType, QuotaCalculationBasis, CalculationMethod } from '../utils/types';
 import { calculateReward } from '../utils/rewardCalculation';
-import { addMonths } from 'date-fns';
+import { addMonths, subDays } from 'date-fns';
 import { utcToZonedTime } from 'date-fns-tz';
 
 const TIMEZONE = 'Asia/Taipei';
@@ -50,7 +50,7 @@ function buildMonthlyWindow(day: number): { start: Date; end: Date } {
 function getQuotaWindow(
   refreshType: QuotaRefreshType | null,
   refreshValue: number | null,
-  _refreshDate: string | null,
+  refreshDate: string | null,
   activityStartDate: Date | string | null,
   activityEndDate: Date | string | null
 ): QuotaWindowResult {
@@ -63,7 +63,18 @@ function getQuotaWindow(
     return { start, end, error: false };
   }
 
-  // 非 monthly: 依 st/end
+  // 指定日期：區間為now至指定日期前一天
+  if (refreshType === 'date' && refreshDate) {
+    const nowUtc = new Date();
+    const now = utcToZonedTime(nowUtc, TIMEZONE);
+    const [year, month, day] = refreshDate.split('-').map(Number);
+    const targetDateTaipei = new Date(year, month - 1, day, 0, 0, 0, 0);
+    const end = subDays(targetDateTaipei, 1);
+    end.setHours(23, 59, 59, 999);
+    return { start: now, end, error: false };
+  }
+
+  // 不刷新：區間為活動開始日到活動結束日
   const st = parseDateValue(activityStartDate);
   const ed = parseDateValue(activityEndDate);
 
