@@ -5,7 +5,7 @@ import api from '../../utils/api';
 // 輔助函數 (與 CardManagement 相同，可考慮提取到 utils)
 function linkify(text: string): string {
   if (!text) return '';
-  return text.replace(/(https?:\/\/[^\s]+|www\.[^\s]+)/gi, (url) => {
+  return text.replace(/(https?:\/\/[^\\s]+|www\\.[^\\s]+)/gi, (url) => {
     const href = url.startsWith('http') ? url : `https://${url}`;
     return `<a href="${href}" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:text-blue-800 underline">${url}</a>`;
   });
@@ -89,15 +89,15 @@ function PaymentMethodItem({ payment, onEdit, onDelete, onReload }: any) {
       });
       setCardsOptions(cardOpts);
       setCardSchemeMap(csMap);
-      setChannelText(chRes.data.data.map((c: any) => c.note ? `${c.name} (${c.note})` : c.name).join('\n'));
+      setChannelText(chRes.data.data.map((c: any) => c.note ? `${c.name} (${c.note})` : c.name).join('\\n'));
     } catch (e) { console.error(e); }
   };
 
   const handleSaveChannels = async () => {
     try {
-      const lines = channelText.split('\n').map(l => l.trim()).filter(l => l);
+      const lines = channelText.split('\\n').map(l => l.trim()).filter(l => l);
       const entries = lines.map(line => {
-        const match = line.match(/^(.+?)\s*\((.+?)\)$/);
+        const match = line.match(/^(.+?)\\s*\\((.+?)\\)$/);
         return match ? { name: match[1].trim(), note: match[2].trim() } : { name: line, note: '' };
       });
 
@@ -110,7 +110,7 @@ function PaymentMethodItem({ payment, onEdit, onDelete, onReload }: any) {
 
       const unresolved = entries.filter(e => !channelCache.current.get(e.name.toLowerCase()));
       if (unresolved.length > 0) {
-        alert(`以下通路無法解析，請確認名稱：\n${unresolved.map(u => u.name).join('\n')}`);
+        alert(`以下通路無法解析，請確認名稱：\\n${unresolved.map(u => u.name).join('\\n')}`);
         return;
       }
 
@@ -400,8 +400,6 @@ export default function PaymentManagement() {
       name: (form.elements.namedItem('name') as HTMLInputElement).value,
       note: (form.elements.namedItem('note') as HTMLInputElement).value,
       displayOrder: editingPayment ? editingPayment.display_order : 0,
-      activityStartDate: (form.elements.namedItem('activityStartDate') as HTMLInputElement)?.value || null,
-      activityEndDate: (form.elements.namedItem('activityEndDate') as HTMLInputElement)?.value || null,
     };
     
     if (editingPayment) await api.put(`/payment-methods/${editingPayment.id}`, data);
@@ -447,26 +445,6 @@ export default function PaymentManagement() {
           <form onSubmit={handleSubmit} className="space-y-3">
             <input name="name" defaultValue={editingPayment?.name} placeholder="名稱" required className="w-full border p-2 rounded" />
             <input name="note" defaultValue={editingPayment?.note} placeholder="備註" className="w-full border p-2 rounded" />
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              <label className="text-xs text-gray-600 flex flex-col">
-                活動開始日
-                <input
-                  type="date"
-                  name="activityStartDate"
-                  className="border p-2 rounded text-sm"
-                  onClick={(e) => (e.currentTarget as HTMLInputElement).showPicker?.()}
-                />
-              </label>
-              <label className="text-xs text-gray-600 flex flex-col">
-                活動結束日
-                <input
-                  type="date"
-                  name="activityEndDate"
-                  className="border p-2 rounded text-sm"
-                  onClick={(e) => (e.currentTarget as HTMLInputElement).showPicker?.()}
-                />
-              </label>
-            </div>
             <div className="flex gap-2">
               <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded">儲存</button>
                   <button type="button" onClick={() => { if (!confirmDiscard()) return; setShowForm(false); setEditingPayment(null); }} className="px-4 py-2 bg-gray-300 rounded">取消</button>
@@ -501,28 +479,6 @@ export default function PaymentManagement() {
                 <form onSubmit={handleSubmit} className="space-y-3">
                   <input name="name" defaultValue={editingPayment?.name} placeholder="名稱" required className="w-full border p-2 rounded text-sm" />
                   <input name="note" defaultValue={editingPayment?.note} placeholder="備註" className="w-full border p-2 rounded text-sm" />
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    <label className="text-xs text-gray-600 flex flex-col">
-                      活動開始日
-                      <input
-                        type="date"
-                        name="activityStartDate"
-                        defaultValue={editingPayment?.activity_start_date || ''}
-                        className="border p-2 rounded text-sm"
-                        onClick={(e) => (e.currentTarget as HTMLInputElement).showPicker?.()}
-                      />
-                    </label>
-                    <label className="text-xs text-gray-600 flex flex-col">
-                      活動結束日
-                      <input
-                        type="date"
-                        name="activityEndDate"
-                        defaultValue={editingPayment?.activity_end_date || ''}
-                        className="border p-2 rounded text-sm"
-                        onClick={(e) => (e.currentTarget as HTMLInputElement).showPicker?.()}
-                      />
-                    </label>
-                  </div>
                   <div className="flex gap-2">
                     <button type="submit" className="px-3 py-1 bg-blue-600 text-white rounded text-xs">儲存</button>
                     <button type="button" onClick={() => { if (!confirmDiscard()) return; setShowForm(false); setEditingPayment(null); }} className="px-3 py-1 bg-gray-400 text-white rounded text-xs">取消</button>
