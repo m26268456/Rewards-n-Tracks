@@ -10,8 +10,7 @@
     "backup": "tsx src/scripts/backupData.ts",
     "restore": "tsx src/scripts/restoreData.ts",
     "migrate:payment-activity": "tsx src/scripts/addPaymentActivityColumns.ts",
-    "migrate:exclusion-note": "tsx src/scripts/addExclusionNoteColumn.ts",
-    "migrate": "flyway-community migrate"
+    "migrate:exclusion-note": "tsx src/scripts/addExclusionNoteColumn.ts"
   },
   "dependencies": {
     "cors": "^2.8.5",
@@ -34,7 +33,6 @@
     "@typescript-eslint/eslint-plugin": "^6.15.0",
     "@typescript-eslint/parser": "^6.15.0",
     "eslint": "^8.56.0",
-    "flyway-community": "^9.22.3",
     "rimraf": "^6.0.1",
     "tsx": "^4.7.0",
     "typescript": "^5.3.3"
