@@ -1,0 +1,10 @@
+﻿# Visual Studio 暫存
+/.vs
+/bin
+/obj
+
+# 關鍵：絕對不要上傳這兩萬個檔案
+node_modules/
+
+# 打包後的成果（Cloudflare 會自己現場打包，所以不用傳這個）
+dist/
