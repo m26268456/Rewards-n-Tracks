@@ -1,0 +1,21 @@
+name: Keep Render Backend Awake
+
+on:
+  # 1. 定時排程觸發 (Cron Job)
+  schedule:
+    # 這是 UTC 時間。 1-15 代表 UTC 的 01:00~15:00 (也就是台灣時間早上 9 點到晚上 11 點)
+    # */14 代表這段時間內，每 14 分鐘執行一次
+    - cron: '*/14 1-15 * * *'
+    
+  # 2. 手動觸發 (讓你在 GitHub 網頁上可以直接按按鈕測試)
+  workflow_dispatch: 
+
+jobs:
+  ping-server:
+    name: 戳醒伺服器
+    runs-on: ubuntu-latest # 給機器人一台最新的 Linux 虛擬機
+    
+    steps:
+      - name: 發送 HTTP 請求到 Render 後端
+        # 使用 curl 指令去戳你的網址，-s 代表靜默模式，> /dev/null 代表不顯示網頁內容
+        run: curl -s https://rewards-n-tracks-backend.onrender.com/ > /dev/null
