@@ -20,3 +20,4 @@ jobs:
         run: |
           curl -s https://m26268456.pages.dev/query > /dev/null
           curl -s https://m26268456.pages.dev/quota > /dev/null
+          curl -s https://rewards-n-tracks-backend.onrender.com > -dev-null
