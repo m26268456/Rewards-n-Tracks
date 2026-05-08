@@ -18,4 +18,5 @@ jobs:
     steps:
       - name: 發送 HTTP 請求到 Render 後端
         # 使用 curl 指令去戳你的網址，-s 代表靜默模式，> /dev/null 代表不顯示網頁內容
-        run: curl -s https://rewards-n-tracks-backend.onrender.com/ > /dev/null
+        run: curl -s https://m26268456.pages.dev/query > /dev/null
+        run: curl -s https://m26268456.pages.dev/quota > /dev/null
