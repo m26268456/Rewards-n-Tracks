@@ -16,8 +16,15 @@ jobs:
     runs-on: ubuntu-latest # 給機器人一台最新的 Linux 虛擬機
     
     steps:
-      - name: 發送 HTTP 請求
+      - name: 戳醒所有端點
         run: |
+          echo "正在戳前端 Query..."
           curl -s https://m26268456.pages.dev/query > /dev/null
+          
+          echo "正在戳前端 Quota..."
           curl -s https://m26268456.pages.dev/quota > /dev/null
+          
+          echo "正在戳 Render 後端..."
           curl -s https://rewards-n-tracks-backend.onrender.com > /dev/null
+          
+          echo "所有請求發送完畢！"
